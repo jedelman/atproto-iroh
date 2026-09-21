@@ -802,9 +802,10 @@ silently decide while moving files.
     latter reopens the automatic-mirroring problem item 13 just resolved
     against, one boundary further out — worth being as careful here as
     §3.3 was about the repo/namespace boundary, not less).
-15. **New.** Run with no bridge at all, this architecture is a local,
-    private, offline-capable Bluesky-shaped substrate (§3.3) — but two
-    pieces are missing before "shaped like" becomes "behaves like": (a) a
+15. **New — explicitly filed as Phase 2, not part of the initial build.**
+    Run with no bridge at all, this architecture is a local, private,
+    offline-capable Bluesky-shaped substrate (§3.3) — but two pieces are
+    missing before "shaped like" becomes "behaves like": (a) a
     social-interaction lexicon set (post/like/repost/follow/thread-shaped
     records; nothing here has drafted these, only the ESS-specific
     `node.profile`/`node.event`/governance schemas at
@@ -816,4 +817,10 @@ silently decide while moving files.
     assembly done once centrally over a public firehose is a different
     problem from the same computation done independently by every reader
     over a different, smaller, capability-scoped view of the world, and
-    nothing in this document has touched that problem yet.
+    nothing in this document has touched that problem yet. Deliberately
+    out of scope until the ESS case (Phase 1: identity, namespaces,
+    capability grants, governance, the four drafted lexicons) has a real
+    implementation — building a feed algorithm before the underlying
+    sync/capability substrate has been used for anything real would be
+    designing the harder problem first, on no evidence from the easier
+    one.
