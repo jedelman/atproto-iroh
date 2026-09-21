@@ -4,11 +4,11 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "Something the namespace's members are being asked to weigh in on. See ESS_MESH_SPEC.md 3.9 -- a Proposal carries no power on its own; it only becomes a Ratification once enough network.essmesh.governance.signal records of type 'consent' reference it (counted by any reader, not aggregated, not signed by anyone but the individual consenters). There is no separate 'ratification' record type -- see this file's note on that.",
+      "description": "Something the namespace's members are being asked to weigh in on. See ESS_MESH_SPEC.md 3.7.2/3.7.3/3.9 -- revised: a Proposal ratifies BY DEFAULT once its deadline passes, unless enough network.essmesh.governance.signal records of type 'block' reference it (counted by any reader, not aggregated, not signed by anyone but the individual blockers). 'consent' signals carry no counting power under this revision -- they're social affirmation, not a required quorum. There is no separate 'ratification' record type -- see this file's note on that.",
       "key": "tid",
       "record": {
         "type": "object",
-        "required": ["title", "class", "createdAt"],
+        "required": ["title", "class", "createdAt", "deadline"],
         "properties": {
           "title": {
             "type": "string",
@@ -28,17 +28,48 @@
               "changePolicy",
               "general"
             ],
-            "description": "The three named classes map directly to ESS_MESH_SPEC.md 3.7.3's table and carry a mechanically-relevant N-of-M threshold the group has agreed on out of band (this schema doesn't encode the threshold itself -- see requiredCount). 'general' is for any other decision the group wants a signed, counted record of, per 3.9's point that a cooperative already knows how to run a hard meeting and shouldn't need the protocol to enumerate every kind of decision it might want to make this way."
+            "description": "The three named classes map directly to ESS_MESH_SPEC.md 3.7.3's table and each carry a group-set (window, blockThreshold) policy -- this schema doesn't encode the current policy itself (see blockThreshold below for why). 'general' is for any other decision the group wants a signed, counted record of, per 3.9's point that a cooperative already knows how to run a hard meeting and shouldn't need the protocol to enumerate every kind of decision it might want to make this way; a 'general' Proposal's threshold is whatever the proposer states and the group treats as legitimate by the same convention-not-cryptography rule that governs block enforcement generally."
           },
-          "requiredCount": {
+          "blockThreshold": {
             "type": "integer",
             "minimum": 1,
-            "description": "Optional. The N the proposer believes this class currently requires, restated here for legibility -- not authoritative; the actual current N-of-M policy lives in the namespace's own governance history (a changePolicy Proposal's own prior Ratification), and a reader should verify against that, not trust this field."
+            "description": "Optional. The block-count threshold the proposer believes this class currently requires, restated here for legibility -- not authoritative; the actual current policy lives in the namespace's own governance history (the most recent ratified changePolicy Proposal for this class, or the namespace's founding policy if none has ratified yet), and a reader should verify against that, not trust this field. Renamed from the pre-revision 'requiredCount', which counted consent rather than block Signals -- see SPEC.md 3.9's superseded-text note."
+          },
+          "deadline": {
+            "type": "string",
+            "format": "datetime",
+            "description": "When this Proposal's objection window closes. Required, not optional, because ESS_MESH_SPEC.md 3.9's whole point for the Ratification layer is a reader being able to check this mechanically rather than argue about whether the window closed -- an ambiguous or missing deadline defeats the mechanism the same way a missing threshold would. Locked in at creation per SPEC.md 3.7.2's note on mid-window policy changes: whatever policy was current when this Proposal was created governs its entire lifecycle, even if a changePolicy Proposal ratifies before this one's deadline."
+          },
+          "policyChange": {
+            "type": "object",
+            "description": "Only meaningful when class is 'changePolicy'; ignored otherwise. The new (window, blockThreshold) pairs this Proposal asks the namespace to adopt, one entry per class being changed. Not authoritative until this Proposal itself ratifies, under the namespace's CURRENT changePolicy policy -- self-amending, per SPEC.md 3.7.2.",
+            "properties": {
+              "admitCoSigner": { "type": "ref", "ref": "#policyValue" },
+              "removeCoSigner": { "type": "ref", "ref": "#policyValue" },
+              "changePolicy": { "type": "ref", "ref": "#policyValue" }
+            }
           },
           "createdAt": {
             "type": "string",
             "format": "datetime"
           }
+        }
+      }
+    },
+    "policyValue": {
+      "type": "object",
+      "description": "One class's governance policy: how long its objection window stays open, and how many block Signals stop it from ratifying.",
+      "required": ["windowSeconds", "blockThreshold"],
+      "properties": {
+        "windowSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Length of the objection window in seconds, measured from the governed Proposal's createdAt."
+        },
+        "blockThreshold": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of outstanding, un-withdrawn block Signals from governance-eligible members required to prevent ratification."
         }
       }
     }

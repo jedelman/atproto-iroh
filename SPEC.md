@@ -476,15 +476,76 @@ with a real cost (an additional conceptual layer — "governance-eligible"
 model hands over for free, and it should be stated as a choice if this
 gets built, not assumed.
 
-**3.7.3 Tiered friction, simplified — no threshold quorum, just counted
-consent:**
+**Resolved, and the resolution changes what "N-of-M" meant, not just
+which of (a)/(b) got picked.** (b) is confirmed — flat for ordinary data,
+gated for governance-eligible standing — but (b) as originally specified
+requires collecting N affirmative `consent` Signals to ratify anything,
+which turns out to have the same disease at any N above the smallest
+handful: it needs people to actively show up and sign, and real
+cooperative governance's actual failure mode is exactly that they don't
+— not out of malice, just because consensus-shaped processes stall on
+apathy as reliably as they stall on an actual holdout, and a determined
+single objector produces the identical stall on purpose. "Unanimous" for
+changing the policy (below) is the sharpest case of this and the least
+defensible: it hands one member, in practice, a permanent veto over ever
+correcting course.
 
-| Action | Suggested N-of-M | Rationale |
+**The fix inverts what's being counted: ratification requires an
+*absence* of sufficient objection within a window, not a *presence* of
+sufficient consent.** A `Proposal` opens with a deadline; if it closes
+without accumulating enough `block` Signals (§3.9) to meet its class's
+current threshold, it ratifies automatically — silence defaults to
+*yes*, the same directional move §3.7.1 already made for capability
+expiry (silence there defaults to *no* — loss of access — because access
+and decision-making want opposite defaults: the cost of a stale grant
+lingering is higher than the cost of a stale grant lapsing, while the
+cost of a decision never happening is higher than the cost of one nobody
+actively fought). `consent` Signals keep their social meaning — visible
+affirmation, part of the record — but carry no mechanical counting power
+either way; only `block` does. This needed no new primitive: §3.9 already
+drafted `consent | stand_aside | block | abstain | exit` and already
+said, in its "what a block Signal actually does and doesn't do"
+paragraph, that block enforcement is client convention, never
+cryptography. What changes is only the default the mechanism resolves to
+when nobody acts.
+
+**And the thresholds themselves are not this document's to set.** Not a
+fixed table of suggested N-of-M values — a namespace's own current
+(window length, block threshold) pair *per class* is itself governance
+state, set at namespace creation by whoever founds it and amended
+afterward only by a ratified `changePolicy`-class `Proposal`, through the
+identical objection-window mechanism, using whatever the *current*
+changePolicy threshold happens to be (self-amending, recursive — same
+"constitution" property §3.7.3's old "unanimous" row was reaching for,
+except the bar itself is now something a group that finds it too high or
+too low can actually move, rather than being permanently stuck with
+whatever this document guessed). This follows §3.9's own stated
+principle more faithfully than the original table did: *"a cooperative
+that already knows how to run a hard meeting doesn't need software
+telling it how to deliberate."* A protocol-suggested N was already a
+mild violation of that; a protocol-*fixed* unanimity requirement was a
+bigger one.
+
+One wrinkle worth resolving explicitly rather than leaving implicit: if
+the policy changes mid-window (a `changePolicy` Proposal ratifies while
+an unrelated Proposal is still open), the open Proposal keeps the
+threshold and window that were in effect when *it* was created, for its
+entire lifecycle. Nobody's rules change underneath a decision already in
+motion.
+
+**3.7.3 Tiered friction, now group-set rather than protocol-suggested.**
+The mechanism (objection-window ratification) is fixed by the protocol;
+the numbers are not. What the protocol still fixes is which four action
+classes exist and that ordinary sharing stays unilateral — the same
+shape §3.7.3 always had, just with "suggested N-of-M" replaced by
+"group's own current (window, block threshold)":
+
+| Action | Threshold | Rationale |
 |---|---|---|
-| Grant ordinary read/write access to a specific peer | none — unilateral by any current holder | Zero-friction sharing was the entire point; gating this defeats §3.6's "ticket-passing as easy as the relationships that carry it." |
-| Admit a new governance-eligible co-signer | low-medium (e.g. 2–3 of current co-signers) | The recursive, standing-conferring action from §3.7.2 — deserves real but not maximal friction. |
-| Remove a governance-eligible co-signer's standing | high (e.g. most of current co-signers) | Consequential and adversarial; should require the group to actually deliberate, same as expelling a member would in the underlying human organization. |
-| Change the N-of-M policy itself | unanimous among current co-signers | The constitution-amendment case — see §3.8. If a subset could lower their own oversight threshold unilaterally, every other row is decorative. |
+| Grant ordinary read/write access to a specific peer | none — unilateral by any current holder, no Proposal involved at all | Zero-friction sharing was the entire point; gating this defeats §3.6's "ticket-passing as easy as the relationships that carry it." |
+| Admit a new governance-eligible co-signer (`admitCoSigner`) | group's current policy for this class; a sensible starting default is a short window and a small block threshold (e.g. 1) | The recursive, standing-conferring action from §3.7.2 — deserves a real chance for someone to object, not maximal friction to make happen. |
+| Remove a governance-eligible co-signer's standing (`removeCoSigner`) | group's current policy for this class; a sensible starting default is a longer window and a threshold scaled to group size rather than a fixed small number | Consequential and adversarial, but gating it behind "most of the group must actively agree" was exactly the unanimity-adjacent failure mode this revision exists to remove — a real, considered objection should be able to stop it; disengagement shouldn't be able to. |
+| Change the policy itself (`changePolicy`) | group's current policy for *this* class — bootstrapped at namespace creation, thereafter self-amending | The constitution-amendment case — see §3.8. Deliberately still the highest bar of the three by convention (longest window, largest relative threshold), but no longer a protocol-mandated unanimity that a single member can hold hostage forever. |
 
 **3.7.4 Transparency: governance events are records, not administrative
 side effects.** Unchanged from earlier drafts in substance, mechanism
@@ -506,14 +567,24 @@ namespace is a data-*inclusion* problem (your records stop being synced
 into that aggregation), never a data-loss event: nothing about your own
 repo depends on anyone else's cooperation.
 
-**3.7.6 Honest costs, rewritten.** N-of-M consent-by-counting reveals
-exactly who signed, always — unlike FROST's aggregate output, which
-didn't distinguish which *t* of *n* participated. For a `block` or a
-contested co-signer decision, that's a real, narrow opsec cost: outsiders
-or other members can see precisely who did and didn't consent, which
-could matter for someone's safety if patterns get correlated over time.
-Worth the group deciding that's acceptable, not assuming it away. Second
-cost: "governance-eligible" as a status distinct from "has a write edge"
+**3.7.6 Honest costs, rewritten, and sharpened again by §3.7.2's later
+revision.** Objection-by-counting reveals exactly who signed, always —
+unlike FROST's aggregate output, which didn't distinguish which *t* of
+*n* participated. Under the original consent-counted design this meant
+outsiders or other members could see precisely who did and didn't
+consent; under the revision, it's sharper still, because the Signal that
+actually does something is `block` — the person who stopped an admission
+or a removal from going through is now individually, permanently
+identified as having done so, not just absent from a list of consenters.
+That's a real, narrow opsec cost, arguably a larger one than the original
+framing had: a visible blocker is a more specific target than a visible
+non-consenter, if patterns get correlated over time or if the proposal
+was itself adversarial. Worth the group deciding that's acceptable, not
+assuming it away — and worth weighing directly against the alternative
+this revision replaced, which had the opposite failure mode (nothing
+ever ratifying) rather than this one (whoever objects is exposed for
+having done so). Second cost: "governance-eligible" as a status distinct
+from "has a write edge"
 is a real conceptual addition this document is choosing to make (§3.7.2),
 not something free.
 
@@ -568,9 +639,12 @@ to namespaces, and a new namespace needs nobody's permission to exist.
 
 The `exit` `Signal` (§3.9) still earns its keep here, in simplified form:
 a governance-eligible member's own self-signed withdrawal, shrinking the
-effective *M* for future N-of-M governance decisions — the same
-voluntary-departure-vs-hostile-holdout distinction as before, just
-operating on a counted roster instead of a threshold-share set.
+pool of members eligible to submit a counted `block` `Signal` on future
+Proposals (§3.7.2's revision means what shrinks isn't a consent quorum
+anymore, but the same idea — someone who's left no longer has standing
+to object) — the same voluntary-departure-vs-hostile-holdout distinction
+as before, just operating on a counted roster instead of a
+threshold-share set.
 
 ### 3.9 Vote primitives: minimal cryptography, everything else is convention
 
@@ -595,8 +669,9 @@ be a regression, not a simplification. `exit` is the odd one out and the
 only type with a defined mechanical effect rather than being purely
 informational: a governance-eligible member's own signed withdrawal of
 their claim to future participation, which — per §3.8's fission
-discussion — shrinks the effective *M* for future N-of-M governance
-decisions (§3.7.3) rather than freezing them. Every `Signal` type is an
+discussion — shrinks the pool of members whose `block` `Signal`s count
+toward a Proposal's threshold (§3.7.2's revision, §3.7.3) rather than
+freezing anything. Every `Signal` type is an
 ordinary signed record from the member's own individual key — never a
 threshold operation, no special status, no group key involved anywhere in
 this design. This is where discussion, "I'll go along but want my concern
@@ -604,34 +679,57 @@ noted," and everything else genuinely human-shaped lives, exactly as
 messy as a real meeting, because the protocol doesn't touch it.
 
 **Ratification layer — mechanical, minimal, the only thing with actual
-teeth.** A `Ratification` is nothing but N distinct, valid individual
-`consent` `Signal`s over the same `Proposal`, counted against whatever N
-its class requires (§3.7.3's table) — not aggregated, not threshold-signed,
-just counted by any reader capable of checking N ordinary signatures. It
-either meets that count or it doesn't exist. No cryptographic
-representation of "no" is needed: a `consent` `Signal` already is the
-only "yes" that has power, and declining to sign is every other outcome
-at once.
+teeth. Revised per §3.7.2/§3.7.3: ratification is the absence of
+sufficient objection, not the presence of sufficient consent.** A
+`Proposal` carries a deadline (derived from its class's current window,
+locked in at the moment the Proposal was created — see §3.7.2's note on
+mid-window policy changes). It becomes a `Ratification` the moment that
+deadline passes with fewer than the class's current block-threshold worth
+of outstanding, un-withdrawn `block` `Signal`s from governance-eligible
+members — not aggregated, not threshold-signed, just counted by any
+reader capable of checking signatures and a timestamp. `consent`
+`Signal`s remain real — visible, signed, part of the record, the thing a
+member does to say "I actively support this" — but carry no counting
+power of their own; a Proposal with zero consent Signals and zero block
+Signals still ratifies on schedule. This is the inverse of the
+original design (below), kept for the record: that version made
+`consent` the only Signal type with power and treated declining to sign
+as "every other outcome at once," which is exactly the shape that stalls
+on apathy as readily as on genuine opposition. Flipping which Signal type
+carries the power, and which outcome silence defaults to, was the whole
+fix — nothing else about the layer changed.
 
-**What a `block` Signal actually does, and doesn't do.** At low-N tiers
-(admitting a new co-signer, say 2–3 of current co-signers) a block cannot
-stop willing consenters by itself — the rest just proceed. That's not a
-gap, it matches real consensus practice: you don't give block power over
-routine admission decisions. The tier that already requires unanimity
-(§3.7.3's "change the N-of-M policy itself" row) is exactly where a block
-is *structurally* sufficient, since unanimous-minus-one can never reach
-unanimous. For everything in between, say the honest thing plainly:
-**a block is a social fact enforced by client convention, not by
-cryptography.** An honest reference client refuses to build, relay, or
-act on a `Ratification` whose `Proposal` has an outstanding, un-withdrawn
-`block` Signal from an eligible member — the same way a block works in a
-real meeting: nothing physically stops the room from acting anyway, the
-group's shared practice is what makes it matter. Write that down as a
-client norm, and don't dress it up as a cryptographic guarantee it isn't
-— that distinction (cryptography for privacy and authentication;
+**What a `block` Signal actually does, and doesn't do.** Under the
+original consent-counted design, a block at a low threshold couldn't
+stop willing consenters by itself, and only the unanimous
+policy-change tier gave a block real structural force. Under the
+objection-window model that asymmetry is gone by construction: a `block`
+is the *only* Signal type that does anything mechanically, at every
+tier, because ratification is defined as its absence. A group that wants
+routine admissions hard to block sets a higher threshold for that class
+(§3.7.3); a group that wants any single member able to raise a real
+objection sets it to one. Either way, the honest limit from the original
+design still holds and is worth restating exactly as before: **a block
+is a social fact enforced by client convention, not by cryptography.** An
+honest reference client refuses to build, relay, or act on a
+`Ratification` whose `Proposal` closed with block Signals at or above
+threshold still outstanding — the same way a block works in a real
+meeting: nothing physically stops a dishonest client from acting anyway,
+the group's shared practice and its choice of software is what makes it
+matter. That distinction — cryptography for privacy and authentication;
 everything about how a decision is actually made is convention, enforced
-by the humans and the software they choose to run) is the design
+by the humans and the software they choose to run — is the design
 principle this whole section follows, not just this one paragraph.
+
+**Superseded — kept for the record, not deleted.** The original
+Ratification rule: *"N distinct, valid individual `consent` `Signal`s
+over the same `Proposal`, counted against whatever N its class requires
+... It either meets that count or it doesn't exist. No cryptographic
+representation of 'no' is needed: a `consent` `Signal` already is the
+only 'yes' that has power, and declining to sign is every other outcome
+at once."* This is precisely backwards for a group where declining to
+sign is the *normal* outcome regardless of opinion — which, per §3.7.2,
+is what real cooperative governance actually looks like.
 
 ## 4. Relationship to `street-smarts`'s `tools/sbci/`
 
@@ -708,21 +806,41 @@ silently decide while moving files.
    sync between edge holders, not epidemic/relayed gossip, so there's no
    relay boundary to leak beyond in the first place. Kept as a record that
    this was worried about and the worry doesn't survive the correction.
-4. §3.7.2's fork — flat capability-granting (a) vs. N-of-M consent
-   specifically for governance-eligible status (b) — is a live, unresolved
-   design choice, not something this document has picked on the group's
-   behalf despite recommending (b). Whoever actually builds this should
-   decide it deliberately, ideally with input from a cooperative that
-   would use it.
-5. N-of-M consent-by-counting (§3.7.6) reveals exactly who signed, every
+4. **Resolved, with input from exactly the kind of cooperative-builder
+   experience item 1 asks whether anyone's talked to.** (b) confirmed —
+   flat for ordinary data, gated for governance-eligible standing — but
+   the gating mechanism itself changed: not N collected `consent`
+   Signals, but ratification-by-default unless enough `block` Signals
+   land within a window, with the window and block threshold themselves
+   group-set governance state rather than protocol-fixed numbers (full
+   reasoning in §3.7.2/§3.7.3's revision, mechanics in §3.9). The reason,
+   plainly: real consensus-shaped requirements don't fail by people
+   actively voting no, they fail by nobody showing up to reach the
+   count, and a single determined holdout produces the same stall as a
+   protocol feature, not a bug in any particular group. §3.9's Signal
+   vocabulary and §3.7.4's transparency mechanism needed no changes —
+   only which Signal type carries mechanical power, and which outcome
+   silence defaults to, flipped.
+5. Objection-by-counting (§3.7.6) reveals exactly who blocked, every
    time — a real, narrow opsec cost relative to what FROST's aggregate
-   signature would have hidden. Is that acceptable, given who this is
-   for? Not evaluated here.
-6. What does an ordinary member's experience of signing a `consent`
-   `Signal` actually feel like in practice — is "sign an ordinary message
-   with your existing key" as frictionless as this document assumes, or
-   does it still need real UX work to not become its own version of the
-   threshold-ceremony problem it was designed to avoid?
+   signature would have hidden, sharper now than in the original
+   consent-counted design because the exposed party is specifically
+   whoever stopped something, not whoever declined to affirm it. Is that
+   acceptable, given who this is for? Not evaluated here.
+6. What does an ordinary member's experience of signing a `Signal` in
+   practice actually feel like — is "sign an ordinary message with your
+   existing key" as frictionless as this document assumes, or does it
+   still need real UX work to not become its own version of the
+   threshold-ceremony problem it was designed to avoid? Sharper now than
+   when this was first asked: since §3.7.2's revision, `consent` carries
+   no mechanical power, only `block` does — does a group still bother
+   signing `consent` when it's purely social, or does the record quietly
+   go quiet (nobody signs anything, a Proposal just... times out and
+   ratifies) in a way that's fine mechanically but loses the "everyone
+   was actually paying attention" signal transparency was partly for? And
+   does making `block` the one Signal that matters make members more
+   reluctant to use it, precisely because §3.7.6 just established it's
+   also the one that exposes them?
 7. Hosting-on-behalf-of threat model, now much lighter-weight than earlier
    drafts (§3.7.5) but not zero: what can someone running shared
    infrastructure for a namespace still see or do with an ordinary,

@@ -50,15 +50,22 @@ interoperable at all.** Concretely, this is doing three jobs at once:
 
 ## What's deliberately *not* a lexicon: `Ratification`
 
-`SPEC.md` §3.9 defines a `Ratification` as a derived fact — N
-distinct, valid `consent` `network.essmesh.governance.signal` records
-referencing the same `Proposal`, counted by any reader — not a signed
-artifact of its own. There is no `network.essmesh.governance.ratification`
-lexicon and there shouldn't be one: giving it its own record type would
-imply someone produces and signs a "ratification event," which is exactly
-the aggregation step this design spent several revisions removing (see
-`SPEC.md`'s FROST → N-of-M-by-counting history). A reader
-computes ratification; nobody issues it.
+`SPEC.md` §3.9 defines a `Ratification` as a derived fact, not a signed
+artifact of its own. **Revised per §3.7.2/§3.9:** a `Proposal` ratifies by
+default once its `deadline` passes, unless enough `block`
+`network.essmesh.governance.signal` records reference it to meet that
+class's current threshold — the inverse of the original rule (N
+`consent` records required), kept in `SPEC.md` for the record because the
+original stalls exactly where real cooperative governance stalls: on
+people not showing up, not on people actively disagreeing. Either way,
+this is a fact any reader computes by counting signed records against a
+`deadline`, never a signed artifact of its own. There is no
+`network.essmesh.governance.ratification` lexicon and there shouldn't be
+one: giving it its own record type would imply someone produces and signs
+a "ratification event," which is exactly the aggregation step this design
+spent several revisions removing (see `SPEC.md`'s FROST →
+N-of-M-by-counting → objection-window history). A reader computes
+ratification; nobody issues it.
 
 ## Schema choices worth flagging, not just declaring
 
