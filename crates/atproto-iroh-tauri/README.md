@@ -9,11 +9,17 @@ this is a UI on top of.
 - `src-tauri/` is a genuine Tauri 2 app: `atproto-iroh-core` is a normal
   path dependency, no IPC or FFI boundary between UI-adjacent code and
   protocol logic.
-- Three commands, each a direct call into the core crate: `spawn_node`
+- Six commands, each a direct call into the core crate: `spawn_node`
   (generates a `did:iroh` identity and starts a real `iroh` node —
   deliberately not done at app launch; see `main.rs`'s comment on why),
-  `node_did`, and `create_namespace_with_profile` (creates a namespace
-  and publishes a `NodeProfile` into it).
+  `node_did`, `create_namespace_with_profile` (creates a namespace and
+  publishes a `NodeProfile` into it), `list_namespaces`, `share_namespace`
+  (`Node::share`, unwrapped to a plain paste-able ticket string), and
+  `join_namespace` (`Node::join`, which SPEC.md §6 item 10 confirmed
+  backfills full history, not just future writes — a real join).
+  `AppState.docs` holds every namespace this node currently has open, so
+  a later command can name one by id without re-deriving it from a
+  ticket each time.
 - `dist/` is plain HTML/CSS/JS — no bundler, no `node_modules`, no
   framework. `tauri.conf.json` sets `withGlobalTauri: true` so
   `window.__TAURI__` is injected directly; `main.js` calls `invoke()`
@@ -25,13 +31,11 @@ this is a UI on top of.
 This proves the wiring, not a usable app. Missing, in roughly the order
 a real client would need them:
 
-- **Sharing/joining.** No UI for `Node::share`/`Node::join` — you can
-  create a namespace and publish into it, but nothing here lets a second
-  person actually get a ticket and join. The most obviously missing
-  piece.
 - **Governance.** `fold.rs`/`propose`/`signal` aren't called from any
   command yet — no way to see a namespace's `Proposal`s, post one, or
-  signal on one from the UI.
+  signal on one from the UI. The most obviously missing piece now that
+  sharing/joining is wired up — two people can be in the same namespace
+  but have no way to actually govern it from this client.
 - **Persistence.** `Node::spawn` uses `Docs::memory()` — nothing survives
   a restart. Needs `Docs::persistent` plus somewhere sensible to put the
   data directory (see `mute.rs`'s `default_path` for the XDG-ish

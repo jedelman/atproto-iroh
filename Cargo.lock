@@ -227,6 +227,7 @@ dependencies = [
  "anyhow",
  "atproto-iroh-core",
  "chrono",
+ "iroh-docs",
  "serde",
  "serde_json",
  "tauri",

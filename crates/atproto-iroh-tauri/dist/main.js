@@ -32,7 +32,67 @@ document
         category,
       });
       namespaceEl.textContent = namespaceId;
+      await refreshNamespaces();
     } catch (err) {
       namespaceEl.textContent = `error: ${err}`;
+    }
+  });
+
+const namespaceListEl = document.getElementById("namespace-list");
+
+async function refreshNamespaces() {
+  namespaceListEl.innerHTML = "";
+  try {
+    const namespaces = await invoke("list_namespaces");
+    for (const id of namespaces) {
+      const li = document.createElement("li");
+      li.textContent = id;
+      li.className = "value";
+      namespaceListEl.appendChild(li);
+    }
+  } catch (err) {
+    const li = document.createElement("li");
+    li.textContent = `error: ${err}`;
+    namespaceListEl.appendChild(li);
+  }
+}
+
+document
+  .getElementById("refresh-namespaces")
+  .addEventListener("click", refreshNamespaces);
+
+const ticketOutEl = document.getElementById("ticket-out");
+
+document
+  .getElementById("share-namespace")
+  .addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const namespaceId = document.getElementById("share-namespace-id").value;
+    const mode = document.getElementById("share-mode").value;
+    ticketOutEl.value = "creating ticket…";
+    try {
+      ticketOutEl.value = await invoke("share_namespace", {
+        namespaceId,
+        mode,
+      });
+    } catch (err) {
+      ticketOutEl.value = `error: ${err}`;
+    }
+  });
+
+const joinedEl = document.getElementById("joined");
+
+document
+  .getElementById("join-namespace")
+  .addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const ticket = document.getElementById("ticket-in").value.trim();
+    joinedEl.textContent = "joining… (full history sync can take a moment)";
+    try {
+      const namespaceId = await invoke("join_namespace", { ticket });
+      joinedEl.textContent = namespaceId;
+      await refreshNamespaces();
+    } catch (err) {
+      joinedEl.textContent = `error: ${err}`;
     }
   });

@@ -71,14 +71,14 @@ ordinary path dependency, not code added to the core crate itself (the
 existing one-crate caution above is about premature protocol-side
 splitting, never about mixing UI and protocol logic into one crate,
 which shouldn't happen regardless of how many crates the protocol side
-ends up as). Three commands proving the wiring end to end
-(`spawn_node`/`node_did`/`create_namespace_with_profile`), a plain
+ends up as). Six commands now, sharing/joining included
+(`spawn_node`/`node_did`/`create_namespace_with_profile`/
+`list_namespaces`/`share_namespace`/`join_namespace`), a plain
 HTML/JS/CSS frontend with no bundler and no framework. `cargo build -p
 atproto-iroh-tauri` verified clean, not just written — see its own
 `README.md` for exactly what that check did and didn't cover, and for
-everything real still missing (sharing/joining, governance UI,
-persistence, mute UI) before this is a usable app rather than a proof
-the layers connect.
+everything real still missing (governance UI, persistence, mute UI)
+before this is a usable app rather than a proof the layers connect.
 
 ## Lexicons
 

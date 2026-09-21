@@ -44,6 +44,49 @@
         </form>
         <p id="namespace" class="value">—</p>
       </section>
+
+      <section>
+        <h2>Your namespaces</h2>
+        <ul id="namespace-list"></ul>
+        <button id="refresh-namespaces">Refresh</button>
+      </section>
+
+      <section>
+        <h2>Share a namespace</h2>
+        <form id="share-namespace">
+          <label>
+            Namespace id
+            <input id="share-namespace-id" type="text" required />
+          </label>
+          <label>
+            Access
+            <select id="share-mode">
+              <option value="Write">Write (full member)</option>
+              <option value="Read">Read only</option>
+            </select>
+          </label>
+          <button type="submit">Create ticket</button>
+        </form>
+        <p class="hint">
+          A ticket is a capability, not a link to a server — see
+          SPEC.md §3.4/§3.6. Anyone holding it can sync this namespace
+          directly with this node; there's nothing else granting or
+          revoking it.
+        </p>
+        <textarea id="ticket-out" class="value" readonly rows="3"></textarea>
+      </section>
+
+      <section>
+        <h2>Join a namespace</h2>
+        <form id="join-namespace">
+          <label>
+            Ticket
+            <textarea id="ticket-in" rows="3" required></textarea>
+          </label>
+          <button type="submit">Join</button>
+        </form>
+        <p id="joined" class="value">—</p>
+      </section>
     </main>
     <script type="module" src="main.js"></script>
   </body>

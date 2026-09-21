@@ -12,6 +12,7 @@ tauri-build = "2"
 
 [dependencies]
 atproto-iroh-core = { path = "../../atproto-iroh-core" }
+iroh-docs = "0.101.0"
 tauri = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
