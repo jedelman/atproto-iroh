@@ -65,12 +65,20 @@ Mobile exists in Tauri 2.0 but is newer than its desktop story — untested
 here, worth pressure-testing before assuming it if a phone client ever
 matters.
 
-Not yet scaffolded. When it is: a separate crate/app (Tauri's own
-`src-tauri` shape) depending on `atproto-iroh-core`, not code added to
-the core crate itself — CLAUDE.md's existing one-crate caution is about
-premature protocol-side splitting, not about keeping UI and protocol
-logic in the same crate, which shouldn't happen regardless of how many
-crates the protocol side ends up as.
+Scaffolded now: `crates/atproto-iroh-tauri` — a separate crate/app
+(Tauri's own `src-tauri` shape) depending on `atproto-iroh-core` as an
+ordinary path dependency, not code added to the core crate itself (the
+existing one-crate caution above is about premature protocol-side
+splitting, never about mixing UI and protocol logic into one crate,
+which shouldn't happen regardless of how many crates the protocol side
+ends up as). Three commands proving the wiring end to end
+(`spawn_node`/`node_did`/`create_namespace_with_profile`), a plain
+HTML/JS/CSS frontend with no bundler and no framework. `cargo build -p
+atproto-iroh-tauri` verified clean, not just written — see its own
+`README.md` for exactly what that check did and didn't cover, and for
+everything real still missing (sharing/joining, governance UI,
+persistence, mute UI) before this is a usable app rather than a proof
+the layers connect.
 
 ## Lexicons
 

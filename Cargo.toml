@@ -1,18 +1,23 @@
 # atproto-iroh — atproto's data model over iroh's transport
 #
-# Workspace structure (currently minimal on purpose — see CLAUDE.md and
-# SPEC.md §6: the real crate boundaries depend on answers to unvalidated
-# iroh-docs questions this design hasn't checked yet):
-#   atproto-iroh-core — stub, not yet real. Will hold identity (did:iroh),
-#                        lexicon-typed record handling, and the repo/sync
-#                        primitives from SPEC.md §3.2-3.4 once those are
-#                        validated against the real iroh-docs API rather
-#                        than assumed from the spec as written.
+# Workspace structure — no longer the placeholder CLAUDE.md's earlier
+# text described. See CLAUDE.md's "Status" and "Client" sections for the
+# current, accurate picture:
+#   atproto-iroh-core  — real: identity (did:iroh), namespace/capability
+#                        wrapper over iroh-docs, governance (objection-
+#                        window ratification, folded over real sync),
+#                        mute. Headless — no UI dependency of any kind.
+#   atproto-iroh-tauri — the reference client (CLAUDE.md's "Client"
+#                        section), embedding atproto-iroh-core directly.
+#                        Scaffolded, unverified to actually build in a
+#                        headless environment without GTK/WebKit system
+#                        libraries — see its own README.
 
 [workspace]
 resolver = "2"
 members = [
     "crates/atproto-iroh-core",
+    "crates/atproto-iroh-tauri/src-tauri",
 ]
 
 [workspace.package]

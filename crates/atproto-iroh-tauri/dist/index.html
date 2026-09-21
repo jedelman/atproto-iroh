@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>atproto-iroh</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>atproto-iroh</h1>
+      <p class="tagline">
+        Reference client. Functional, not precious — MIT-licensed on
+        purpose; make it pretty if you want it prettier.
+      </p>
+
+      <section>
+        <h2>Identity</h2>
+        <button id="spawn">Spawn node</button>
+        <p id="did" class="value">—</p>
+      </section>
+
+      <section>
+        <h2>Create a namespace</h2>
+        <form id="create-namespace">
+          <label>
+            Name
+            <input id="name" type="text" placeholder="Eleanor's" required />
+          </label>
+          <label>
+            Category
+            <select id="category">
+              <option value="coop_housing_clt">Housing co-op / CLT</option>
+              <option value="worker_coop">Worker co-op</option>
+              <option value="worker_coop_ethical_finance">
+                Worker co-op, ethical finance
+              </option>
+              <option value="public_cooperative_facility">
+                Public cooperative facility
+              </option>
+              <option value="standard_commercial">Standard commercial</option>
+            </select>
+          </label>
+          <button type="submit">Create</button>
+        </form>
+        <p id="namespace" class="value">—</p>
+      </section>
+    </main>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "atproto-iroh",
+  "version": "0.0.0",
+  "identifier": "org.jason-edelman.atproto-iroh",
+  "build": {
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "atproto-iroh",
+        "width": 900,
+        "height": 640
+      }
+    ]
+  },
+  "bundle": {
+    "active": false
+  }
+}
