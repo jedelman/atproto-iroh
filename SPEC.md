@@ -113,12 +113,104 @@ which only works if you already have a route to it — identity and
 reachability stay collapsed into the same trust boundary, unchanged by
 this revision.
 
-### 3.3 Data: each member has an ordinary repo; a node is a namespace, not
+### 3.3 Data: a repo is optional per member; a node is a namespace, not
 a repo
+
+**Revision — the repo is no longer assumed mandatory, and namespace
+entries do not mirror it.** The original framing below ("each member has
+an ordinary repo") silently assumed two things that turned out to need
+separating: that everyone maintains a persistent MST repo, and that a
+namespace's iroh-docs entries are somehow derived from or kept in sync
+with that repo. Neither survives scrutiny:
+
+- **Namespace entries are independently, deliberately published — never
+  an automatic mirror of repo content.** The alternative (an entry in a
+  namespace being a copy of, or kept in sync with, something in your MST
+  repo) was checked against this document's own priority-1 goals and
+  loses on all three: it requires new propagation machinery (either you
+  run it, or a peer runs it "on your behalf," reopening exactly the trust
+  question §3.7.5 exists to avoid); it breaks tiered disclosure (§2 goal
+  3) unless you build a selective-mirroring filter on top, which is
+  disclosure control *bolted on*, the thing goal 3 explicitly rejects;
+  and it multiplies the scrubbing surface of anything you want to retract
+  — instead of "the namespaces I chose to publish this into" (small,
+  explicit, enumerable), it becomes "the repo, plus every namespace that
+  happened to mirror it, including ones I may have forgotten I'm in."
+  Deliberate per-namespace publishing is also the reading already
+  consistent with the rest of this section — "no single canonical
+  'Eleanor's says X' statement" (below) presupposes there's no canonical
+  upstream copy other copies are tracking, which an automatic mirror
+  would quietly contradict.
+- **A persistent MST repo is therefore optional, not required, for
+  namespace-only participation.** The only reason to keep it at all is
+  cross-transport compatibility with the wider atproto ecosystem (see the
+  bridge discussion below) — and that turns out to be available more
+  cheaply than "maintain a repo" implies. What actually carries
+  compatibility is lexicon- and MST-shaped *records*, not the standing
+  existence of a repo object. Someone who only ever publishes into
+  namespaces, with no ambition to ever be reachable from Bluesky-adjacent
+  tooling, doesn't need a repo at all — consistent with goal 5's
+  zero-labor publishing, which a mandatory second persistent data
+  structure per member actively worked against.
+
+**Cross-transport compatibility with the wider atproto ecosystem is
+real but bounded, and only reachable through an explicit, opt-in
+bridge — never a core protocol feature.** Split into what's actually two
+different claims:
+
+- *Data-shape compatibility is already free.* Goal 4's reuse of MST +
+  lexicons means anything published here, if extracted, is already a
+  valid atproto record — same signing, same tree structure. No further
+  design work buys this; it's a consequence of decisions already made.
+- *Live-network compatibility — resolvable by existing atproto tooling,
+  crawlable by a relay, indexed by an AppView, found by a Bluesky client
+  — is not reachable from inside this design at all, and isn't a gap to
+  close so much as the direct expression of the tension §2 already
+  names.* Two independent walls: (1) `did:iroh` isn't a DID method any
+  existing resolver knows how to fetch — not a missing feature, a
+  missing entry in every other implementation's method table, which
+  isn't this document's to add unilaterally; (2) real interop requires
+  answering `com.atproto.sync.getRepo`/`subscribeRepos` on a public
+  surface a relay can crawl — which *is* the firehose goal 1 defines
+  itself against. You cannot expose that surface without becoming
+  exactly the public-by-default thing this design opted out of.
+- *The only feasible shape is a deliberate bridge*: a **separate**
+  `did:plc` or `did:web` identity (never the `did:iroh` one wearing a
+  costume — the methods can't be dual-homed) running an ordinary,
+  minimal PDS-shaped service, which republishes specifically whatever
+  records someone chooses to push through it — the same
+  deliberate-per-record posture as namespace publishing, applied at the
+  ecosystem boundary instead of the repo/namespace one, for the identical
+  reason. Anything sent through the bridge becomes exactly as public,
+  crawlable, and permanent as any ordinary atproto/Bluesky post the
+  moment it crosses — a real, one-way privacy trade accepted per-record,
+  not a property of the protocol. This was always the intended shape of
+  a future private↔public sync path, not a discovery made under
+  pressure; see §6 for what's still unbuilt.
+
+**Implication worth stating plainly: this architecture, run entirely
+within its own boundary with no bridge at all, is a local, private,
+offline-capable Bluesky-shaped substrate** — same record model
+(lexicon-typed, MST-signed), same repo format if someone chooses to keep
+one, but direct capability-scoped peer sync instead of
+PDS→relay→firehose, and tiered disclosure native rather than "public by
+default, DM as the exception." What it does *not* yet have, and what
+distinguishes "the data model Bluesky uses" from "a thing that behaves
+like Bluesky," is a social-interaction lexicon set (post/like/repost/
+follow/thread — this document has only ever drafted the ESS-specific
+`node.profile`/`node.event`/governance schemas) and, more structurally, a
+**feed/timeline construction layer**. Bluesky's AppView computes that
+server-side, over the whole public firehose; nothing here has a
+server-side anything, so timeline construction would have to happen
+locally, on each reader's own node, over whatever repos and namespaces
+they currently hold capabilities into. That's a real, distinct piece of
+design work, not a footnote — tracked as a new item in §6.
 
 Each member runs (or has hosted on their behalf — see §3.7) one ordinary,
 single-key-signed MST repo — the standard atproto shape, nothing new,
-nothing collectively owned. Records use lexicon collections,
+nothing collectively owned; a member who never intends to bridge to the
+wider ecosystem may not need one at all, per the revision above. Records
+use lexicon collections,
 `network.essmesh.node.profile` and `network.essmesh.node.event`, drafted
 in full at `lexicons/network/essmesh/node/` — real schema, not a
 placeholder, though not yet validated against live atproto tooling (see
@@ -687,3 +779,41 @@ silently decide while moving files.
     governance-eligible removal, which is a much heavier operation
     (touches every current holder, not just the removed one) than §3.7.3's
     friction table currently prices it at.
+13. **Resolved, by working through the repo/namespace relationship
+    directly (§3.3's revision).** Namespace entries are independent,
+    deliberately-published records, never an automatic mirror of a
+    member's MST repo — checked against goals 1–3 and against the
+    scrubbing-surface reasoning in §3.4's validation note, and it loses on
+    every axis. Consequence: a persistent MST repo is optional for
+    namespace-only participation, not required. What replaces "keep a
+    repo for interop" is narrower and cheaper: keep records
+    lexicon/MST-*shaped* when you write them, which costs nothing extra
+    given goal 4 already committed to that format.
+14. **New.** The opt-in bridge to the wider atproto ecosystem (§3.3) is
+    named and reasoned about but not designed: what exactly the minimal
+    PDS-shaped service needs to implement (`com.atproto.sync.getRepo` at
+    minimum; whether `subscribeRepos` is avoidable or whether any relay
+    integration requires it); how a bridge identity's `did:plc`/`did:web`
+    keypair relates to someone's `did:iroh` one procedurally (generated
+    once at bridge-setup time and treated as fully separate key material,
+    presumably — not decided); and whether "republish this one record
+    through the bridge" is a per-record manual action or something a
+    person can pre-authorize for a whole namespace going forward (the
+    latter reopens the automatic-mirroring problem item 13 just resolved
+    against, one boundary further out — worth being as careful here as
+    §3.3 was about the repo/namespace boundary, not less).
+15. **New.** Run with no bridge at all, this architecture is a local,
+    private, offline-capable Bluesky-shaped substrate (§3.3) — but two
+    pieces are missing before "shaped like" becomes "behaves like": (a) a
+    social-interaction lexicon set (post/like/repost/follow/thread-shaped
+    records; nothing here has drafted these, only the ESS-specific
+    `node.profile`/`node.event`/governance schemas at
+    `lexicons/network/essmesh/`), and (b) a feed/timeline construction
+    layer computed locally by each reader over whatever repos and
+    namespaces they currently hold capabilities into, since there is no
+    server-side AppView to do that computation the way Bluesky's does.
+    (b) is the larger piece — ranking, deduplication, and thread
+    assembly done once centrally over a public firehose is a different
+    problem from the same computation done independently by every reader
+    over a different, smaller, capability-scoped view of the world, and
+    nothing in this document has touched that problem yet.
