@@ -15,30 +15,26 @@ Don't skim it and start coding from a half-remembered summary.
 
 ## Status and what to do first
 
-Design sketch, no code. `SPEC.md` §6 is a ranked open-questions list —
-several items are explicitly "not validated against real API surface,"
-which is true of the whole document, not just those items. **The first
-real task is probably a small, throwaway experiment against the actual
-`iroh-docs` crate**, not writing the protocol's architecture in Rust from
-the spec as given. Concretely, before committing to anything as
-load-bearing:
+No longer a design sketch with no code. The three `iroh-docs` questions
+this section used to list as the first task are answered — live, against
+the real crate, in `crates/atproto-iroh-core/examples/iroh_docs_probe.rs`
+— and every design fork SPEC.md needed resolved before real code was
+buildable (repo/namespace relationship, flat vs. N-of-M governance,
+rotation vs. mute) is resolved, in `SPEC.md` itself, reasoning kept
+visible per this doc's own practice below. `crates/atproto-iroh-core` has
+real modules now (`identity`, `namespace`, `records`, `governance`,
+`mute`), not a stub — 14/14 tests green as of the last scaffold, unit
+tests for the pure governance/ratification logic plus one live two-node
+integration test doing real QUIC sync.
 
-- Does `iroh-docs` expose an enumerable list of a namespace's current
-  capability holders? (§3.7.2's governance-eligible-roster idea depends
-  on this.)
-- Does granting a peer a read capability into an existing namespace sync
-  them the full document history, or only writes going forward? (§3.4,
-  §6.10 — the backfill/new-member-access story depends on this being
-  "full history.")
-- Does `iroh-docs`' replication model actually resolve convergence
-  per-key rather than forcing a merge decision across different authors
-  writing to the same document? (§3.4's justification for using one
-  document per namespace depends on this.)
-
-If any of these turn out false, don't patch around it quietly — go back
-to `SPEC.md` and revise the relevant section the same way previous
-revisions are recorded, with the old reasoning kept visible, not deleted.
-That's the established practice in this document; keep it.
+What's still genuinely unbuilt: governance isn't wired to `namespace.rs`
+yet (the ratification logic and the sync layer are both real and tested,
+just not plugged into each other), and there's no client at all — see
+"Client" below. If a future `iroh-docs` upgrade or new finding turns any
+of the resolved SPEC.md forks out to be wrong, don't patch around it
+quietly — revise the relevant section the same way every previous
+revision is recorded, old reasoning kept visible, not deleted. That's the
+established practice in this document; keep it.
 
 ## Language and structure
 
@@ -50,6 +46,31 @@ shape (`crates/atproto-iroh-core`, currently a stub). Don't invent the
 full crate breakdown before the `iroh-docs` experiments above answer
 enough of §6 to know where the real module boundaries are — a premature
 multi-crate split encodes uncertainty as if it were architecture.
+
+## Client
+
+Decided, not yet built: **Tauri**, Rust backend embedding
+`atproto-iroh-core` directly as a library — no IPC/FFI boundary between
+UI and protocol logic the way an Electron+Node frontend would need
+talking to a Rust core, small binary, genuinely offline (nothing here
+has a server to reach even if the UI wanted one). Real cost accepted
+knowingly, not overlooked: Tauri renders through the OS's native webview
+(WebKit on macOS/Linux, WebView2 on Windows) rather than bundling
+Chromium, so cross-platform rendering isn't as uniform as Electron's.
+Jason's call, explicitly: worth it for the smaller footprint, and the
+visual layer doesn't need to be load-bearing from day one — this repo is
+MIT-licensed specifically so a rougher-but-functional reference UI is a
+fine place to start; anyone who wants it prettier can make it prettier.
+Mobile exists in Tauri 2.0 but is newer than its desktop story — untested
+here, worth pressure-testing before assuming it if a phone client ever
+matters.
+
+Not yet scaffolded. When it is: a separate crate/app (Tauri's own
+`src-tauri` shape) depending on `atproto-iroh-core`, not code added to
+the core crate itself — CLAUDE.md's existing one-crate caution is about
+premature protocol-side splitting, not about keeping UI and protocol
+logic in the same crate, which shouldn't happen regardless of how many
+crates the protocol side ends up as.
 
 ## Lexicons
 
