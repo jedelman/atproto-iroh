@@ -784,9 +784,16 @@ silently decide while moving files.
 
 ## 6. Open questions, ranked by "blocks anything getting built"
 
-1. Has anyone talked to an actual cooperative about whether any of this
-   solves a problem they have? Still ranked first, on purpose — everything
-   below is unbuildable-usefully without an answer to this one.
+1. **Partially answered, first-person, and it's what drove item 4's
+   resolution.** Jason has built cooperatives himself, mostly
+   unsuccessfully, and says this design would have solved real blocking
+   problems he hit — specifically the consensus/unanimity failure mode
+   §3.7.2's revision now targets directly. That's a real answer, not a
+   hypothetical one, but it's one founder's retrospective account, not
+   the "walk this design past an active cooperative and watch what breaks
+   against real, current group dynamics" check this item originally
+   asked for — still worth doing before treating the rest as validated,
+   still ranked first on purpose, just no longer answered with silence.
 2. **Resolved, by a real probe against the crate
    (`crates/atproto-iroh-core/examples/iroh_docs_probe.rs`), not by
    memory.** No — `iroh-docs` exposes no enumerable list of who currently
