@@ -1,0 +1,8 @@
+[package]
+name = "atproto-iroh-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Stub crate — see ../../SPEC.md and ../../CLAUDE.md before adding real code here."

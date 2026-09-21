@@ -1,0 +1,23 @@
+# atproto-iroh — atproto's data model over iroh's transport
+#
+# Workspace structure (currently minimal on purpose — see CLAUDE.md and
+# SPEC.md §6: the real crate boundaries depend on answers to unvalidated
+# iroh-docs questions this design hasn't checked yet):
+#   atproto-iroh-core — stub, not yet real. Will hold identity (did:iroh),
+#                        lexicon-typed record handling, and the repo/sync
+#                        primitives from SPEC.md §3.2-3.4 once those are
+#                        validated against the real iroh-docs API rather
+#                        than assumed from the spec as written.
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/atproto-iroh-core",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+authors = ["Jason Edelman <edelmanja@gmail.com>"]
+repository = "https://github.com/jedelman/atproto-iroh"
