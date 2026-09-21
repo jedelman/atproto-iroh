@@ -1,4 +1,17 @@
-//! Deliberately empty. See `../../SPEC.md` for the design and
-//! `../../CLAUDE.md` for what to validate against the real `iroh-docs`
-//! API before writing real code here — this stub exists so the workspace
-//! builds, not as a starting skeleton to fill in from the spec as given.
+//! Core primitives for the atproto-iroh design — see `../../SPEC.md` for
+//! the design record and `../../CLAUDE.md` for how to extend this crate.
+//!
+//! Module map, and which SPEC.md section each one implements:
+//! - [`identity`] — `did:iroh` (§3.2)
+//! - [`namespace`] — namespaces as `iroh-docs` documents, typed record
+//!   read/write (§3.3/§3.4, validated in `examples/iroh_docs_probe.rs`)
+//! - [`records`] — `network.essmesh.node.*` typed records (§3.3)
+//! - [`governance`] — objection-window `Proposal`/`Signal` ratification
+//!   (§3.7.2/§3.7.3/§3.9)
+//! - [`mute`] — local, unsynced per-reader mute (§6 item 12)
+
+pub mod governance;
+pub mod identity;
+pub mod mute;
+pub mod namespace;
+pub mod records;

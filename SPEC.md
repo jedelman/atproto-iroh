@@ -858,11 +858,12 @@ silently decide while moving files.
    does making `block` the one Signal that matters make members more
    reluctant to use it, precisely because §3.7.6 just established it's
    also the one that exposes them?
-7. Hosting-on-behalf-of threat model, now much lighter-weight than earlier
-   drafts (§3.7.5) but not zero: what can someone running shared
-   infrastructure for a namespace still see or do with an ordinary,
-   unilaterally-grantable read/write edge, and is that residual exposure
-   acceptable to a group like Eleanor's?
+7. **Deprecated, by decision, not resolution.** Hosting-on-behalf-of
+   threat model — what someone running shared infrastructure for a
+   namespace could still see or do. Dropped rather than answered: nothing
+   in the Phase 1 build (§6 item 15) has anyone hosting on anyone else's
+   behalf, so there's no live case to reason about yet. Worth reopening
+   the moment that changes, not before.
 8. **Superseded, not open**: FROST tooling maturity, UCAN-over-a-threshold-DID,
    rekey-as-succession, and DID-identifier-continuity-across-a-rekey were
    all real open questions against the group-DID/FROST architecture in
@@ -870,14 +871,15 @@ silently decide while moving files.
    architecture (§3.2–§3.8) — there is no group DID to rekey or need
    continuity for. Kept here as a record that the architecture changed
    underneath them, not because they're still live.
-9. New namespace migration: if a group ever wants to move "Eleanor's" to
-   a different topic entirely (not fission — the same group, deliberately
-   relocating), is there a clean way to signal "this topic supersedes
-   that one" to existing edge-holders, or does every holder need to be
-   individually re-shared with the new topic by hand? Unlike the old
-   DID-redirect problem this replaces, there's no natural place to put
-   that signal, since a bare topic ID carries no signature of its own the
-   way a DID document did.
+9. **Deprecated, by decision, not resolution.** New-namespace migration —
+   whether there's a clean "this topic supersedes that one" signal for a
+   group deliberately relocating. Its main live motivation was rotation
+   (§6 item 12): a rotated namespace needing a way to point existing
+   holders at its replacement. Item 12 resolved against rotation for v1,
+   so the sharpest reason this mattered went with it. Still a real gap if
+   it comes up on its own — a group relocating for reasons that have
+   nothing to do with revocation is a separate, plausible case — but not
+   one anything currently being built needs answered.
 10. **Resolved.** New-member historical access: confirmed live against
     the real crate, not just inferred from what document sync should mean
     by definition. Three entries were committed before a second node ever
