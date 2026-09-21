@@ -608,6 +608,16 @@ same probe: write capability itself is a single shared secret, not a
 per-peer edge, which matters more to §3.7's revocation story than the
 roster question did.
 
+**3.7.7 Revocation, resolved: no secret rotation for v1, two lighter
+layers instead.** §3.4's shared-secret finding meant §3.7.1's
+"capabilities expire by default, individually revocable" has nothing to
+attach to at the transport layer — the only mechanical fix (rotating the
+namespace secret on every removal) was costed against what it actually
+defends against and found not worth building yet; full reasoning and the
+two-layer replacement (governance-ratified removal, binding by
+convention; a purely local per-reader mute, needing no protocol surface
+at all) is in §6 item 12, not repeated here.
+
 ### 3.8 Fission and constituent power, without a group key left to fight
 over
 
@@ -888,22 +898,48 @@ silently decide while moving files.
     `profile`'s and `event`'s field lists specifically, since those are
     the two records asking someone to describe themselves, not just the
     two managing protocol mechanics.
-12. **New, found while validating §3.4 rather than anticipated —
-    probably belongs nearer the top on a re-rank.** `iroh-docs` write
-    capability is one shared `NamespaceSecret` per namespace, identical
-    across every writer, not a per-peer credential — see §3.4's
-    validation note in full. §3.7's revocation story (short-lived,
-    self-expiring, individually revocable edges) has nowhere to attach at
-    the transport layer as a result; it has to be entirely an
-    application-level convention (readers honoring/dropping an Author's
-    entries per the `governance` collection) with no cryptographic
-    backstop preventing a revoked-in-governance peer from continuing to
-    write with an unrotated secret. Whoever builds this needs to decide,
-    deliberately, whether that gap is acceptable as designed or whether
-    it needs closing — e.g., namespace-secret rotation on every
-    governance-eligible removal, which is a much heavier operation
-    (touches every current holder, not just the removed one) than §3.7.3's
-    friction table currently prices it at.
+12. **Resolved: no rotation for v1, decided on threat model, not
+    convenience.** `iroh-docs` write capability is one shared
+    `NamespaceSecret` per namespace, identical across every writer, not a
+    per-peer credential (§3.4's validation note). Closing that gap with
+    rotation was costed out directly: cheap to mint, expensive to land —
+    it touches every remaining holder (not just the removed one), has no
+    continuity mechanism (a new `NamespaceId` with nothing carrying over
+    automatically, no "this supersedes that" signal since §6 item 9 is
+    still open), and doesn't even retroactively unwrite anything the
+    removed person already synced elsewhere. Weighed against what it
+    actually buys: rotation only defends against a *resource* attack —
+    someone who keeps writing to flood or spite the shared document after
+    being voted out, imposing real sync/storage cost on everyone who
+    remains. Against the ordinary case — a member the group no longer
+    trusts or wants to platform, who isn't trying to break the
+    infrastructure — it buys nothing that's not already covered by
+    convention-based enforcement, and judged (Jason, from direct
+    cooperative-building experience) rare enough not to justify that
+    coordination cost up front.
+
+    **What v1 ships with instead, and these are two different layers, not
+    one:** (1) the governance-level removal already built (§3.7.2's
+    ratified `removeCoSigner` Proposal) — a group decision, binding on
+    honest clients by the same convention-not-cryptography principle
+    §3.9 already established for `block`; and (2) a purely local,
+    unsigned, unsynced per-reader **mute** — one person deciding they
+    personally don't want to see someone's entries, needing nobody's
+    agreement, carrying no protocol surface at all (no lexicon, no
+    record, no `governance` collection entry) because a personal
+    preference doesn't need cryptographic backing any more than deciding
+    not to read a particular news outlet does. Mute is strictly lighter
+    than removal — it changes what one reader's own client shows them,
+    nothing about anyone else's view or the removed party's standing —
+    and either can exist without the other: a member can be muted by one
+    person without the group ever voting on anything, or removed by the
+    group while individuals who'd already muted them notice nothing new.
+
+    Not deleting the option: if a real resource-attack incident ever
+    happens, rotation is still exactly the mechanism described above,
+    unbuilt but fully specified — this is a decision against building it
+    now, made on a stated threat-model judgment, not a claim that the
+    gap doesn't exist.
 13. **Resolved, by working through the repo/namespace relationship
     directly (§3.3's revision).** Namespace entries are independent,
     deliberately-published records, never an automatic mirror of a
