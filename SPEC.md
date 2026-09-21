@@ -195,6 +195,104 @@ is the mechanism** — simpler than the previous revision's gossip/backfill
 split, and the objection to it doesn't survive close reading of what
 `iroh-docs` actually converges on.
 
+**Validated against the real crate (`iroh-docs` 0.101.0), not assumed.**
+`crates/atproto-iroh-core/examples/iroh_docs_probe.rs` is the throwaway
+experiment CLAUDE.md called for: two real in-process nodes, real QUIC
+sync, no mocking. Three findings, one of them a correction to this
+section rather than a confirmation of it.
+
+*Confirmed, and sharper than stated above.* Convergence doesn't merely
+happen to resolve "per key" as a policy — it's structural.
+`RecordIdentifier` (`iroh_docs::sync::RecordIdentifier`) is the compound
+key `(namespace, author, key)`, not `(namespace, key)`. Two different
+authors writing the literal same key string never contend for one slot at
+all; they're different identifiers from the store's point of view, and a
+query returns both, independently, forever. There is no merge decision to
+have an opinion about. Live: author A and author B both wrote
+`"shared-key"` on one node; after sync, the other node read back both
+entries under that key, distinctly attributed, byte-identical to what
+each author wrote. The "resolves per key" framing above is correct in
+effect but undersells it — it reads like a convergence *rule* the design
+is relying on, when it's actually a consequence of what the identifier
+*is*. Only true same-author-same-key writes ever compete, resolved by
+`Record`'s own `Ord` (timestamp, then hash) — which is the only case
+where "current version of this member's own record" as stated above
+actually needs a tiebreak.
+
+*Confirmed.* §6.10's question, whether granting access syncs full history
+or only future writes: full history. Three entries were written and
+committed on node0 *before* node1 ever received a ticket for the
+namespace. After node1 imported the ticket and synced, it had all three,
+unprompted — set reconciliation between two peers converges on the whole
+replica state each holds, not a subscription to a tail. New-member access
+never needed a separate backfill mechanism because sync was never an
+event-log tail to begin with.
+
+**Not confirmed, and this is the one worth stopping on: "write(peer →
+namespace)" is not the edge this paragraph's "directly, mechanically
+checkable" claim needs it to be.** §3.4 frames membership as "does X
+currently hold a write edge," implying a per-peer, individually
+grantable and revocable credential — precisely what §3.2's identity
+correction and §3.7.2's single-point-of-capture worry both assume is
+possible to build. Reading `iroh_docs::sync::Capability` (`keys.rs`,
+`sync.rs`) says otherwise: `Capability::Write` wraps exactly one
+`NamespaceSecret` — **the same 32 bytes for the entire namespace, held
+identically by every writer.** There is no per-peer write credential
+anywhere in the crate. What *is* per-peer is the `Author` keypair used to
+*sign entries* — which is who gets credited for a given record — but
+authoring is gated by holding the shared namespace secret, not by
+anything tied to a specific `Author`. Concretely: anyone who has ever
+been handed the `Write` ticket can create entries under *any* `Author`
+key they generate, including a fresh, previously-unseen one — the crate
+has no notion of "this Author is bound to this credential-holder" to
+enforce. Two consequences that reach back into earlier sections:
+
+- **§3.7.1's "capabilities expire by default, short-lived, self-expiring"
+  has no home in the crate.** A `NamespaceSecret` doesn't expire, doesn't
+  carry a validity window, and isn't scoped to a peer. Self-expiry would
+  have to be an application-level convention layered on top (e.g.,
+  rotating to a fresh namespace on a schedule and re-inviting current
+  holders) — real, buildable, but not a crate primitive, and rotation is
+  an all-holders event, not a single-peer one.
+- **Per-peer write revocation isn't a crate operation.** Because every
+  writer holds literally the same secret, there is no "revoke Bob's write
+  edge" — only "rotate the namespace secret and redistribute it to
+  everyone *except* Bob," which is indistinguishable, from the crate's
+  point of view, from kicking out the whole membership and re-admitting
+  most of it. §3.7's governance layer (counted `consent` signals,
+  §3.7.2–3.7.4) can *decide* to revoke someone; it just can't express
+  that decision as a capability-layer operation the way §3.4's "does X
+  hold a write edge" phrasing implies. Enforcement has to happen where
+  the governance record lives and gets read — readers who honor a
+  `governance` collection's revocation record can choose to stop
+  accepting that Author's entries as legitimate, but nothing stops the
+  revoked peer from continuing to write with the (unrotated) secret; it
+  only stops good-faith readers from counting those writes. That's a
+  materially weaker guarantee than "revoked" suggests, and worth being
+  explicit about rather than letting the edge-graph language imply
+  cryptographic enforcement iroh-docs doesn't provide.
+
+Read capability (`Capability::Read(NamespaceId)`) is even thinner: the
+`NamespaceId` is the document's own public identifier, not a secret at
+all. "Granting read access" is really "telling someone the ID and how to
+reach a peer holding it" (a `DocTicket`) — there's nothing to revoke,
+because there was never a credential, only knowledge plus reachability.
+Once synced, a peer keeps whatever it already received regardless of
+anything happening on the write side afterward.
+
+None of this breaks the design — §3.7.4 already put the actual
+accountability mechanism in the right place (signed `consent`/`block`
+records in an application-level `governance` collection, read and
+enforced by peers themselves), which doesn't depend on the transport
+layer providing per-peer revocation. But §3.4 and §3.7.1 currently read
+as if the crate hands over peer-scoped, expiring, revocable edges for
+free, and it doesn't — the accountability §3.7 describes has to be the
+*whole* mechanism, not a backstop on top of a capability layer that was
+never doing that job. Worth restating §3.4's membership test as "does X
+currently write under an Author key the governance record still honors"
+rather than "does X hold a write edge," since the latter names a
+credential the crate doesn't actually scope to X at all.
+
 ### 3.5 Tiered disclosure: two namespaces, not one
 
 To satisfy goal 3 without contradicting goal 1, a node that wants any
@@ -325,11 +423,27 @@ could matter for someone's safety if patterns get correlated over time.
 Worth the group deciding that's acceptable, not assuming it away. Second
 cost: "governance-eligible" as a status distinct from "has a write edge"
 is a real conceptual addition this document is choosing to make (§3.7.2),
-not something free. None of §3.7 has been validated against `iroh-docs`'s
-actual current API surface (§3.4) — in particular, whether it exposes an
-enumerable list of current
-capability/topic holders at all, which the governance-eligible-roster
-idea depends on (§6).
+not something free.
+
+**Validated, per §3.4's probe.** `iroh-docs` exposes no enumerable list
+of current capability/topic holders at all — `DocsApi::list()` returns
+only the calling node's *own* capabilities, and `Doc::get_sync_peers()`
+turned out to be a persistent-store reconnect hint (empty on the
+in-memory nodes tested, even mid-sync), not a live-membership view. The
+governance-eligible-roster idea was never going to get this from the
+transport layer, and §3.7.4 already didn't ask it to: the roster is
+whatever the `governance` collection's signed `consent`/`block` records
+fold up to, computed and verified by each reader locally, same as any
+other application state synced as ordinary entries. That's slightly
+different from how §3.7.2–3.7.4 read on a first pass — less "the
+namespace tracks who's eligible" and more "eligibility is a value every
+reader independently derives by replaying records it already received" —
+but it's the same mechanism, just named more precisely now that it's
+confirmed nothing lower in the stack does this job instead. See §3.4's
+validation note for the sharper and more consequential finding from the
+same probe: write capability itself is a single shared secret, not a
+per-peer edge, which matters more to §3.7's revocation story than the
+roster question did.
 
 ### 3.8 Fission and constituent power, without a group key left to fight
 over
@@ -483,11 +597,18 @@ silently decide while moving files.
 1. Has anyone talked to an actual cooperative about whether any of this
    solves a problem they have? Still ranked first, on purpose — everything
    below is unbuildable-usefully without an answer to this one.
-2. Does `iroh-docs` expose an enumerable list of who currently holds a
-   capability grant into a namespace? §3.7.2's governance-eligible-roster
-   idea depends on being able to check who currently holds a grant-capable
-   edge, not just on holding one yourself. Needs a real read of the
-   crate's current source, not assumed from memory.
+2. **Resolved, by a real probe against the crate
+   (`crates/atproto-iroh-core/examples/iroh_docs_probe.rs`), not by
+   memory.** No — `iroh-docs` exposes no enumerable list of who currently
+   holds a capability grant into a namespace. `DocsApi::list()` is local-
+   only (this node's own capabilities); `Doc::get_sync_peers()` is a
+   persistent-store reconnect hint, not a membership view, and was empty
+   even mid-sync on the in-memory nodes tested. Not a blocker: §3.7.4
+   already puts the actual roster computation at the application layer
+   (folding the `governance` collection's signed records), which needed
+   no crate support to begin with — see §3.4's and §3.7.6's validation
+   notes for the detail, and for the sharper finding the same probe
+   turned up about write capability not being per-peer at all.
 3. **Resolved by correcting a misreading, not by new design work**: an
    earlier revision worried about scoping multi-hop gossip relay to
    exactly the edge set, which would have been a real, load-bearing
@@ -530,18 +651,17 @@ silently decide while moving files.
    DID-redirect problem this replaces, there's no natural place to put
    that signal, since a bare topic ID carries no signature of its own the
    way a DID document did.
-10. **Mostly resolved by §3.4's correction, worth confirming against the
-    real API rather than fully closing**: new-member historical access
-    was a real open question when "live propagation" and "backfill" were
-    two separate mechanisms with different semantics. With one mechanism
-    (direct sync of the namespace's `iroh-docs` document), the answer
-    should just fall out of what document sync means by definition —
-    syncing a document gets you its current state, not merely a
-    subscription to future changes. What's still unverified: does
-    `iroh-docs` actually behave that way in practice, and does a new
-    member's first sync need to happen against one specific peer they can
-    reach, or can it pull from any current holder — which would make this
-    faster in practice than it reads on paper.
+10. **Resolved.** New-member historical access: confirmed live against
+    the real crate, not just inferred from what document sync should mean
+    by definition. Three entries were committed before a second node ever
+    held a ticket for the namespace; after that node imported the ticket
+    and synced, it had all three, unprompted — full backfill on grant,
+    not a tail subscription (`crates/atproto-iroh-core/examples/iroh_docs_probe.rs`,
+    also written up under §3.4). Still genuinely open: whether a new
+    member's first sync needs one specific reachable peer or can pull
+    from any current holder — the probe only ever tested two nodes
+    syncing directly, never a three-plus-peer topology, so "any current
+    holder" is untested, not confirmed.
 11. The four lexicons at `lexicons/` (§3.3, §3.9) are a careful draft
     following documented atproto lexicon conventions, not run through an
     actual lexicon validator or checked against current atproto tooling —
@@ -551,3 +671,19 @@ silently decide while moving files.
     `profile`'s and `event`'s field lists specifically, since those are
     the two records asking someone to describe themselves, not just the
     two managing protocol mechanics.
+12. **New, found while validating §3.4 rather than anticipated —
+    probably belongs nearer the top on a re-rank.** `iroh-docs` write
+    capability is one shared `NamespaceSecret` per namespace, identical
+    across every writer, not a per-peer credential — see §3.4's
+    validation note in full. §3.7's revocation story (short-lived,
+    self-expiring, individually revocable edges) has nowhere to attach at
+    the transport layer as a result; it has to be entirely an
+    application-level convention (readers honoring/dropping an Author's
+    entries per the `governance` collection) with no cryptographic
+    backstop preventing a revoked-in-governance peer from continuing to
+    write with an unrotated secret. Whoever builds this needs to decide,
+    deliberately, whether that gap is acceptable as designed or whether
+    it needs closing — e.g., namespace-secret rotation on every
+    governance-eligible removal, which is a much heavier operation
+    (touches every current holder, not just the removed one) than §3.7.3's
+    friction table currently prices it at.
