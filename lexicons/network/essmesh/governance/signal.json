@@ -13,7 +13,7 @@
           "subject": {
             "type": "ref",
             "ref": "com.atproto.repo.strongRef",
-            "description": "AT-URI + CID of the network.essmesh.governance.proposal record this responds to. Pinning the CID, not just the URI, means a Signal is unambiguous about exactly which version of a Proposal it consented to, even if the author edited it after some members already signaled -- an edit produces a new record version a stale Signal doesn't cover."
+            "description": "AT-URI + CID of the network.essmesh.governance.proposal record this responds to. Pinning the CID, not just the URI, means a Signal is unambiguous about exactly which version of a Proposal it consented to, even if the author edited it after some members already signaled -- an edit produces a new record version a stale Signal doesn't cover. Known scaffold deviation, not yet closed: crates/atproto-iroh-core's governance.rs doesn't yet construct real strongRefs (no CID computation, no AT-URI resolution wired up) -- it uses a plain '{authorHex}/{rkey}' string as a stand-in, documented in that module and in this repo's own type, not silently different from what this lexicon actually specifies."
           },
           "signalType": {
             "type": "string",

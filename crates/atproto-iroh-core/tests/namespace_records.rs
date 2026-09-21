@@ -57,12 +57,13 @@ async fn a_profile_written_on_one_node_syncs_readable_to_another() -> anyhow::Re
     assert_eq!(synced.neighborhood.as_deref(), Some("Ghent"));
     assert_eq!(synced.governance_eligible, Some(true));
 
-    // list_records finds it too, under the right author, via the
+    // list_records finds it too, under the right author and rkey, via the
     // collection-prefix query rather than an exact key.
     let all: Vec<_> = list_records::<NodeProfile>(&member, &member_doc).await?;
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].0, author);
-    assert_eq!(all[0].1.name, "Eleanor's");
+    assert_eq!(all[0].1, NodeProfile::SELF_KEY);
+    assert_eq!(all[0].2.name, "Eleanor's");
 
     founder.shutdown().await;
     member.shutdown().await;

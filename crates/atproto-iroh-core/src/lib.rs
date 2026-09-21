@@ -7,9 +7,12 @@
 //!   read/write (§3.3/§3.4, validated in `examples/iroh_docs_probe.rs`)
 //! - [`records`] — `network.essmesh.node.*` typed records (§3.3)
 //! - [`governance`] — objection-window `Proposal`/`Signal` ratification
-//!   (§3.7.2/§3.7.3/§3.9)
+//!   (§3.7.2/§3.7.3/§3.9), pure/no I/O by design
+//! - [`fold`] — the I/O layer wiring `governance` to `namespace`: reads a
+//!   namespace's governance collection and folds it into current state
 //! - [`mute`] — local, unsynced per-reader mute (§6 item 12)
 
+pub mod fold;
 pub mod governance;
 pub mod identity;
 pub mod mute;

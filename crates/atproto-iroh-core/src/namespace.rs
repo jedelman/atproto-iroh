@@ -147,11 +147,15 @@ pub async fn get_record<R: Record>(
 
 /// All entries of one record type across every author currently included
 /// in this namespace — SPEC.md §3.3: "the union of included members'
-/// individually-signed records," not a single converged answer.
+/// individually-signed records," not a single converged answer. Returns
+/// the `rkey` alongside author and record, not just the record — needed
+/// by anything that has to name a specific entry afterward (a strongRef,
+/// a `governance::subject_ref`, an update to the same key), which
+/// dropping it would make impossible to do correctly.
 pub async fn list_records<R: Record>(
     node: &Node,
     doc: &Doc,
-) -> Result<Vec<(AuthorId, R)>> {
+) -> Result<Vec<(AuthorId, String, R)>> {
     let prefix = format!("{}/", R::COLLECTION).into_bytes();
     let stream = doc.get_many(Query::key_prefix(prefix)).await?;
     tokio::pin!(stream);
@@ -159,10 +163,21 @@ pub async fn list_records<R: Record>(
     while let Some(entry) = stream.next().await {
         let entry = entry?;
         let author = entry.author();
+        let rkey = rkey_of::<R>(&entry)?;
         let record: R = read_entry(node, &entry).await?;
-        out.push((author, record));
+        out.push((author, rkey, record));
     }
     Ok(out)
+}
+
+/// Strips `{collection}/` off an entry's key to recover the `rkey` —
+/// inverse of `records::key_for`.
+fn rkey_of<R: Record>(entry: &Entry) -> Result<String> {
+    let key = std::str::from_utf8(entry.key())?;
+    let prefix = format!("{}/", R::COLLECTION);
+    key.strip_prefix(&prefix)
+        .map(str::to_string)
+        .ok_or_else(|| anyhow::anyhow!("entry key {key:?} missing expected prefix {prefix:?}"))
 }
 
 async fn read_entry<R: Record>(node: &Node, entry: &Entry) -> Result<R> {

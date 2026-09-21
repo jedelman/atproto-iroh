@@ -17,7 +17,9 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+use crate::records::Record;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, std::hash::Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum GovernanceClass {
     AdmitCoSigner,
@@ -85,6 +87,18 @@ pub struct Proposal {
     pub deadline: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub policy_change: Option<PolicyChange>,
+    /// Required on `AdmitCoSigner`/`RemoveCoSigner`, ignored otherwise.
+    /// Hex-encoded author id of who the decision is about. Found missing
+    /// while wiring this to `fold.rs`, not anticipated: without a
+    /// machine-readable subject, "who got admitted" lives only in free
+    /// text `title`/`description` — unparseable, which defeats §3.9's own
+    /// point for this whole layer ("software that can't be argued about
+    /// whether quorum was met" has to extend to *what* was decided, not
+    /// just whether enough people agreed). Named `subjectMember` in the
+    /// lexicon to avoid colliding with atproto's `subject` convention,
+    /// which `Signal.subject` below already uses for a different thing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_member: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -92,12 +106,41 @@ pub struct Proposal {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Signal {
     /// Stand-in for `com.atproto.repo.strongRef` (AT-URI + CID) until
-    /// real record referencing exists — see `namespace.rs`'s TODOs.
+    /// real record referencing exists. Convention adopted here rather
+    /// than left unspecified: `"{proposal_author_hex}/{proposal_rkey}"` —
+    /// enough to identify one `Proposal` unambiguously (namespace is
+    /// already implicit in which document this is synced through;
+    /// `RecordIdentifier` needs author+key, not just key, to name a
+    /// record at all — see `namespace.rs`/`records.rs`). See
+    /// `subject_ref`/`parse_subject_ref` below.
     pub subject: String,
     pub signal_type: SignalType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     pub created_at: DateTime<Utc>,
+}
+
+impl Record for Proposal {
+    const COLLECTION: &'static str = "network.essmesh.governance.proposal";
+}
+
+impl Record for Signal {
+    const COLLECTION: &'static str = "network.essmesh.governance.signal";
+}
+
+/// Builds a `Signal.subject` value referencing one `Proposal` — see
+/// `Signal::subject`'s doc comment for the convention.
+pub fn subject_ref(proposal_author_hex: &str, proposal_rkey: &str) -> String {
+    format!("{proposal_author_hex}/{proposal_rkey}")
+}
+
+/// Inverse of `subject_ref`. `None` if `subject` isn't in the expected
+/// shape — callers should treat that as "doesn't reference anything this
+/// fold understands," not as an error; a signal-shaped record from a
+/// future, differently-shaped protocol revision shouldn't crash today's
+/// reader.
+pub fn parse_subject_ref(subject: &str) -> Option<(&str, &str)> {
+    subject.split_once('/')
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -200,6 +243,7 @@ mod tests {
             block_threshold: None,
             deadline: at(deadline),
             policy_change: None,
+            subject_member: None,
             created_at: at(0),
         }
     }

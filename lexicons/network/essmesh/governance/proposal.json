@@ -49,6 +49,10 @@
               "changePolicy": { "type": "ref", "ref": "#policyValue" }
             }
           },
+          "subjectMember": {
+            "type": "string",
+            "description": "Required when class is 'admitCoSigner' or 'removeCoSigner'; ignored otherwise. Hex-encoded author id of who the decision is about. Found missing when this schema was first wired up to an actual fold over governance history: without a machine-readable subject, 'who got admitted or removed' lived only in free-text title/description, unparseable by any reader -- which defeated this whole layer's point (ESS_MESH_SPEC.md 3.9: 'software that can't be argued about whether quorum was met' has to extend to WHAT was decided, not just whether enough people agreed). Named 'subjectMember' rather than 'subject' to avoid colliding with network.essmesh.governance.signal's own 'subject' field, which points at a different thing (the Proposal itself, not a member)."
+          },
           "createdAt": {
             "type": "string",
             "format": "datetime"

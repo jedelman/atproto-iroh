@@ -165,6 +165,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "hex",
  "iroh",
  "iroh-blobs",
  "iroh-docs",
