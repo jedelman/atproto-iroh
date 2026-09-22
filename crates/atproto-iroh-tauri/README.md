@@ -9,21 +9,26 @@ this is a UI on top of.
 - `src-tauri/` is a genuine Tauri 2 app: `atproto-iroh-core` is a normal
   path dependency, no IPC or FFI boundary between UI-adjacent code and
   protocol logic.
-- Eleven commands, each a direct call into the core crate: `spawn_node`
-  (generates a `did:iroh` identity and starts a real `iroh` node —
-  deliberately not done at app launch; see `main.rs`'s comment on why),
-  `node_did`, `create_namespace_with_profile` (creates a namespace and
-  publishes a `NodeProfile` into it), `list_namespaces`, `share_namespace`
+- Fifteen commands, each a direct call into the core crate: `spawn_node`
+  (loads or generates a persistent `did:iroh` identity and starts a real
+  `iroh` node against real on-disk storage — deliberately not done at
+  app launch; see `main.rs`'s comment on why), `node_did`,
+  `create_namespace_with_profile` (creates a namespace and publishes a
+  `NodeProfile` into it), `list_namespaces`, `share_namespace`
   (`Node::share`, unwrapped to a plain paste-able ticket string),
   `join_namespace` (`Node::join`, which SPEC.md §6 item 10 confirmed
   backfills full history, not just future writes — a real join),
   `dump_namespace` (the inspector, below), `ticket_to_qr` (an SVG QR
-  code of a ticket string, nothing more), and `write_text`/`read_text`/
-  `submit_to_inbox` (the freeform layer, below). `AppState.docs` holds
-  every namespace this node currently has open, `AppState.author` one
-  record-signing identity reused across every write this session makes
-  (so edits from one person land under one consistent author rather than
-  a new stranger each call).
+  code of a ticket string, nothing more), `write_text`/`read_text`/
+  `submit_to_inbox` (the freeform layer, below), and
+  `list_proposals`/`governance_state`/`create_proposal`/`create_signal`
+  (governance, below). `AppState.docs` holds every namespace this node
+  currently has open — repopulated from disk on every `spawn_node` call
+  now, not just built up in memory during one session — and
+  `AppState.author` this node's persistent default record-signing author
+  (`DocsApi::author_default`, not minted fresh), so edits from one
+  person land under one consistent author across restarts, not a new
+  stranger each launch.
 - **The inspector** (`namespace::dump_all`, `dist`'s "Inspector"
   section): every raw entry currently synced into a namespace — author,
   key, timestamp, content — with no per-record-type code anywhere in the
@@ -83,6 +88,28 @@ this is a UI on top of.
   O(every record in the namespace) per call — a caching or incremental-
   fold question once a namespace has more than a handful of proposals,
   not addressed here.
+- **Persistence** (`identity::Identity::load_or_generate`,
+  `namespace::Node::spawn_persistent`, both new): real, not cosmetic.
+  Found and fixed a genuine bug while wiring this, not something
+  cosmetic: before this, `Node::spawn()` always generated a random
+  `SecretKey` internally, completely disconnected from whatever
+  `Identity` a caller displayed as a `did:iroh` — the DID shown to a
+  person and the node's actual network identity were two unrelated
+  keys. `spawn_persistent` threads `Identity`'s own key through to the
+  `Endpoint`, so persisting the identity file actually persists the
+  network identity, not just a label next to a different one each
+  restart. Data lives under `$XDG_DATA_HOME/atproto-iroh` (or
+  `~/.local/share/atproto-iroh`) — an `identity` file (raw 32-byte
+  secret, same protection any other private key file needs, not
+  enforced by this code) and a `node/` directory holding the persistent
+  docs and blobs stores. `spawn_node` also repopulates `AppState.docs`
+  from `Node::list_local_namespaces` on every launch, so a restarted app
+  can immediately act on namespaces from a previous session. Proven
+  live, not just by compiling: `tests/persistence.rs` spawns a node,
+  creates a namespace, writes a record, does a *real* shutdown, spawns a
+  brand-new `Node` against the same identity file and data directory,
+  and checks that the DID, the namespace, and the record all survived
+  with nothing handed to the second node directly.
 - `dist/` is plain HTML/CSS/JS — no bundler, no `node_modules`, no
   framework. `tauri.conf.json` sets `withGlobalTauri: true` so
   `window.__TAURI__` is injected directly; `main.js` calls `invoke()`
@@ -94,18 +121,14 @@ this is a UI on top of.
 This proves the wiring, not a usable app. Missing, in roughly the order
 a real client would need them:
 
-- **A real founding-record mechanism.** Governance is wired now, but
-  resting on the placeholder/heuristic bootstrap described above — the
-  most consequential remaining gap, since it's load-bearing for whether
-  the ratification math means anything in a real deployment, not just a
-  reference client.
-- **Persistence.** `Node::spawn` uses `Docs::memory()` — nothing survives
-  a restart. Needs `Docs::persistent` plus somewhere sensible to put the
-  data directory (see `mute.rs`'s `default_path` for the XDG-ish
-  convention already established elsewhere in the core crate; this
-  should probably follow the same one).
+- **A real founding-record mechanism.** Governance is wired, but resting
+  on a placeholder/heuristic bootstrap — the most consequential
+  remaining gap, since it's load-bearing for whether the ratification
+  math means anything in a real deployment, not just a reference
+  client. See the Governance bullet above.
 - **Mute UI.** `mute::MuteList` exists and is tested; nothing here reads
-  or writes it.
+  or writes it. Also not yet persisted to the same data directory as
+  everything else now is — it still only takes an explicit path.
 - **QR scanning.** Generation only. Decoding would need webview camera
   access (`getUserMedia` + a JS decoder, e.g. `jsQR`) — plausible on
   desktop since Tauri's webview is a real browser engine, but camera

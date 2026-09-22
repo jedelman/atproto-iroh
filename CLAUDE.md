@@ -71,12 +71,13 @@ ordinary path dependency, not code added to the core crate itself (the
 existing one-crate caution above is about premature protocol-side
 splitting, never about mixing UI and protocol logic into one crate,
 which shouldn't happen regardless of how many crates the protocol side
-ends up as). Eleven commands now — sharing/joining, a generic state
-inspector, QR ticket rendering, and freeform text included
+ends up as). Fifteen commands now — sharing/joining, a generic state
+inspector, QR ticket rendering, freeform text, and governance included
 (`spawn_node`/`node_did`/`create_namespace_with_profile`/
 `list_namespaces`/`share_namespace`/`join_namespace`/`dump_namespace`/
-`ticket_to_qr`/`write_text`/`read_text`/`submit_to_inbox`), a plain
-HTML/JS/CSS frontend with no bundler and no framework. The inspector
+`ticket_to_qr`/`write_text`/`read_text`/`submit_to_inbox`/
+`list_proposals`/`governance_state`/`create_proposal`/`create_signal`),
+a plain HTML/JS/CSS frontend with no bundler and no framework. The inspector
 (`namespace::dump_all`) is genuinely per-record-type-agnostic — every
 entry's bytes get tried as JSON, then UTF-8 text, then a hex fallback, so
 it already covers every record type this crate defines and every
@@ -91,10 +92,24 @@ the write ticket granting access is deliberately posted somewhere public.
 `cargo build -p atproto-iroh-tauri` verified clean, not just written —
 see its own `README.md` for exactly what that check did and didn't
 cover, and for everything real still missing (a real founding-record
-mechanism, persistence, mute UI, QR scanning) before this is a usable
-app rather than a proof the layers connect. Governance is wired now too
+mechanism, mute UI, QR scanning) before this is a usable app rather
+than a proof the layers connect. Governance is wired
 (`list_proposals`/`governance_state`/`create_proposal`/`create_signal`)
 — see the README's note on what it's still resting on a placeholder for.
+
+**Persistence is real now too** (`identity::Identity::load_or_generate`,
+`namespace::Node::spawn_persistent`) — data under
+`$XDG_DATA_HOME/atproto-iroh`, proven live in
+`crates/atproto-iroh-core/tests/persistence.rs` (spawn, create a
+namespace, write a record, a genuine shutdown, spawn a new `Node`
+against the same files, check the DID/namespace/record all survived).
+Found and fixed a real bug wiring it, not something cosmetic:
+`Node::spawn()` had always generated a random `SecretKey` internally,
+completely disconnected from whatever `Identity` a caller displayed as
+a `did:iroh` — the shown DID and the node's actual network identity
+were two unrelated keys. `spawn_persistent` threads the identity's real
+key into the `Endpoint`, so persisting the identity file now persists
+the thing it claims to.
 
 **Extension model, decided: PRs to this repo, not a plugin system.**
 Building governance's UI surfaced a real question — should new content

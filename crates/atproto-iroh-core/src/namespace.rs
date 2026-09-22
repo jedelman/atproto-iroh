@@ -12,22 +12,27 @@
 //! signing identity for *entries*, which is a different thing from *who
 //! can write at all*.
 
+use std::path::Path;
+
 use anyhow::Result;
-use iroh::{endpoint::presets, Endpoint};
-use iroh_blobs::{store::mem::MemStore, BlobsProtocol, ALPN as BLOBS_ALPN};
+use iroh::{endpoint::presets, Endpoint, SecretKey};
+use iroh_blobs::{api::Store as BlobStore, store::mem::MemStore, BlobsProtocol, ALPN as BLOBS_ALPN};
 use iroh_docs::{
     api::{
         protocol::{AddrInfoOptions, ShareMode},
         Doc, DocsApi,
     },
-    protocol::Docs,
+    protocol::{Builder as DocsBuilder, Docs},
     store::Query,
-    AuthorId, DocTicket, Entry, ALPN as DOCS_ALPN,
+    AuthorId, CapabilityKind, DocTicket, Entry, NamespaceId, ALPN as DOCS_ALPN,
 };
 use iroh_gossip::{net::Gossip, ALPN as GOSSIP_ALPN};
 use n0_future::StreamExt;
 
-use crate::records::{key_for, Record};
+use crate::{
+    identity::Identity,
+    records::{key_for, Record},
+};
 
 /// A running local node: identity/transport (`iroh::Endpoint`), content
 /// storage (`iroh-blobs`), and the docs engine, wired together the same
@@ -36,22 +41,66 @@ use crate::records::{key_for, Record};
 /// after the probe.
 pub struct Node {
     router: iroh::protocol::Router,
-    blobs: MemStore,
+    blobs: BlobStore,
     docs: DocsApi,
 }
 
 impl Node {
-    /// `presets::Minimal` — no relay/discovery dependency, matching the
-    /// probe. A persistent deployment will want `presets::N0` (or
-    /// whatever real discovery this design ends up using) and
-    /// `Docs::persistent` instead of `Docs::memory` below; both are
-    /// swap-ins, not a different architecture.
+    /// In-memory, throwaway identity and storage — nothing here survives
+    /// process exit. What every test and the probe example use; real
+    /// persistence is `spawn_persistent` below, which shares this
+    /// function's wiring end to end (`spawn_inner`), not a parallel
+    /// implementation of it.
     pub async fn spawn() -> Result<Self> {
-        let endpoint = Endpoint::bind(presets::Minimal).await?;
         let blobs = MemStore::default();
+        Self::spawn_inner(SecretKey::generate(), (*blobs).clone(), Docs::memory()).await
+    }
+
+    /// Real persistence: `identity`'s own secret key becomes the
+    /// `iroh::Endpoint`'s actual key (not just a label — see this
+    /// function's note below on the bug that was, before this), and both
+    /// the docs store and blob store live under `data_dir` via
+    /// `Docs::persistent`/`FsStore::load` rather than in memory.
+    ///
+    /// **Found while wiring this, not anticipated**: before this
+    /// function existed, `Node::spawn()` always generated a random
+    /// `SecretKey` internally, completely disconnected from whatever
+    /// `Identity` a caller had generated or loaded to display a `did:iroh`
+    /// — the DID shown to a person and the actual network identity of
+    /// their node were two unrelated keys. Persisting `Identity` alone,
+    /// without also using it to build the `Endpoint`, would have made
+    /// that worse, not better: a *stable-looking* DID hiding a node whose
+    /// real identity still changed every restart. Fixed here by taking
+    /// the identity as a parameter and threading its key through to
+    /// `Endpoint::builder(...).secret_key(...)`, which `spawn()` above
+    /// also now does (with a throwaway key) for the same reason — one
+    /// code path, so this can't silently regress for either caller.
+    pub async fn spawn_persistent(identity: &Identity, data_dir: impl AsRef<Path>) -> Result<Self> {
+        let data_dir = data_dir.as_ref();
+        let blobs_dir = data_dir.join("blobs");
+        let docs_dir = data_dir.join("docs");
+        // iroh-docs' persistent store opens `docs_dir/docs.redb` directly
+        // and doesn't create `docs_dir` itself — found by hitting the
+        // error on first run, not anticipated from the API alone.
+        std::fs::create_dir_all(&blobs_dir)?;
+        std::fs::create_dir_all(&docs_dir)?;
+        let blobs = iroh_blobs::store::fs::FsStore::load(blobs_dir).await?;
+        let docs_builder = Docs::persistent(docs_dir);
+        Self::spawn_inner(identity.secret_key().clone(), (*blobs).clone(), docs_builder).await
+    }
+
+    async fn spawn_inner(
+        secret_key: SecretKey,
+        blobs: BlobStore,
+        docs_builder: DocsBuilder,
+    ) -> Result<Self> {
+        let endpoint = Endpoint::builder(presets::Minimal)
+            .secret_key(secret_key)
+            .bind()
+            .await?;
         let gossip = Gossip::builder().spawn(endpoint.clone());
-        let docs = Docs::memory()
-            .spawn(endpoint.clone(), (*blobs).clone(), gossip.clone())
+        let docs = docs_builder
+            .spawn(endpoint.clone(), blobs.clone(), gossip.clone())
             .await?;
         let router = iroh::protocol::Router::builder(endpoint.clone())
             .accept(BLOBS_ALPN, BlobsProtocol::new(&blobs, None))
@@ -69,8 +118,8 @@ impl Node {
         &self.docs
     }
 
-    fn blob_store(&self) -> iroh_blobs::api::Store {
-        (*self.blobs).clone()
+    fn blob_store(&self) -> BlobStore {
+        self.blobs.clone()
     }
 
     /// Mints a new `network.essmesh.node.*` record-signing identity.
@@ -99,6 +148,33 @@ impl Node {
     /// (§6 item 10) to backfill full history, not just future writes.
     pub async fn join(&self, ticket: DocTicket) -> Result<Doc> {
         Ok(self.docs.import(ticket).await?)
+    }
+
+    /// Reopens a namespace this node already holds a capability into —
+    /// the missing piece for persistence: on a fresh process, nothing in
+    /// memory remembers which namespaces were open before, but a
+    /// persistent docs store (`spawn_persistent`) still has every
+    /// capability this node was ever granted. `list_local_namespaces`
+    /// finds the ids; this reopens one of them.
+    pub async fn open_namespace(&self, id: NamespaceId) -> Result<Option<Doc>> {
+        Ok(self.docs.open(id).await?)
+    }
+
+    /// Every namespace this node currently holds *any* capability into —
+    /// on a persistent node, this is what survives a restart; on a
+    /// memory node, it's whatever's been created or joined so far this
+    /// process. Read/write is `DocsApi::list()`'s own `CapabilityKind`,
+    /// passed through rather than collapsed, since a caller reopening
+    /// namespaces after restart needs to know which capability it's
+    /// getting back.
+    pub async fn list_local_namespaces(&self) -> Result<Vec<(NamespaceId, CapabilityKind)>> {
+        let stream = self.docs.list().await?;
+        tokio::pin!(stream);
+        let mut out = Vec::new();
+        while let Some(item) = stream.next().await {
+            out.push(item?);
+        }
+        Ok(out)
     }
 
     pub async fn shutdown(self) {
