@@ -324,6 +324,40 @@
       </section>
 
       <section>
+        <h2>Polls</h2>
+        <p class="hint">
+          A poll is a <code>General</code>-class governance Proposal,
+          nothing more — same mechanism as everything in the full
+          Governance section below, relabeled for the common case ("ask
+          a question, let people weigh in") rather than a second thing
+          built alongside it. <strong>Not a majority vote</strong>: it
+          passes by default once voting closes unless enough people
+          explicitly Object — silence counts as support. Use the full
+          Governance section below for anything that needs
+          Admit/Remove/Change-policy, an abstain/stand-aside signal, or
+          a longer note on your vote.
+        </p>
+        <form id="create-poll">
+          <label>
+            Namespace id
+            <input id="poll-namespace-id" type="text" required />
+          </label>
+          <label>
+            Question
+            <input id="poll-question" type="text" required />
+          </label>
+          <label>
+            Voting closes in (hours)
+            <input id="poll-deadline-hours" type="number" value="24" min="1" required />
+          </label>
+          <button type="submit">Create poll</button>
+          <button type="button" id="poll-refresh">Refresh</button>
+        </form>
+        <p id="poll-status" class="value">—</p>
+        <div id="polls-out"></div>
+      </section>
+
+      <section>
         <h2>Governance</h2>
         <p class="hint">
           Objection-window ratification (SPEC.md §3.7.2/§3.9): a

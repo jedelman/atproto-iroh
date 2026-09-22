@@ -520,6 +520,97 @@ document
     }
   });
 
+// --- Polls ---------------------------------------------------------
+
+// A poll is a General-class Proposal — this section calls the exact
+// same commands the full Governance section below does
+// (create_proposal/create_signal/list_proposals), just filtered to
+// class === "general" and relabeled. No separate backend mechanism.
+
+const pollStatusEl = document.getElementById("poll-status");
+const pollsOutEl = document.getElementById("polls-out");
+
+document.getElementById("create-poll").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const namespaceId = document.getElementById("poll-namespace-id").value;
+  const title = document.getElementById("poll-question").value;
+  const deadlineHours = Number(document.getElementById("poll-deadline-hours").value);
+  pollStatusEl.textContent = "creating…";
+  try {
+    await invoke("create_proposal", {
+      namespaceId,
+      title,
+      description: null,
+      class: "general",
+      deadlineHours,
+      subjectMemberHex: null,
+      policyChange: null,
+    });
+    pollStatusEl.textContent = `created at ${new Date().toLocaleTimeString()}`;
+    document.getElementById("poll-question").value = "";
+    await refreshPolls();
+  } catch (err) {
+    pollStatusEl.textContent = `error: ${err}`;
+  }
+});
+
+async function refreshPolls() {
+  const namespaceId = document.getElementById("poll-namespace-id").value;
+  pollsOutEl.innerHTML = "";
+  try {
+    const proposals = await invoke("list_proposals", { namespaceId });
+    const polls = proposals.filter((p) => p.proposal.class === "general");
+    if (polls.length === 0) {
+      pollsOutEl.textContent = "(no polls yet)";
+      return;
+    }
+    for (const p of polls) {
+      const div = document.createElement("div");
+      const statusLabel =
+        p.status.state === "open"
+          ? `open, ${p.status.blockers.length} objection(s) so far`
+          : p.status.state === "ratified"
+          ? "passed"
+          : `did not pass (${p.status.blockers.length} objection(s))`;
+      const label = document.createElement("p");
+      label.className = "value";
+      label.textContent = `${p.proposal.title} — ${statusLabel}`;
+      div.appendChild(label);
+
+      const supportBtn = document.createElement("button");
+      supportBtn.type = "button";
+      supportBtn.textContent = "Support";
+      const objectBtn = document.createElement("button");
+      objectBtn.type = "button";
+      objectBtn.textContent = "Object";
+
+      const vote = async (signalType) => {
+        try {
+          await invoke("create_signal", {
+            namespaceId,
+            proposalAuthorHex: p.author_hex,
+            proposalRkey: p.rkey,
+            signalType,
+            text: null,
+          });
+          await refreshPolls();
+        } catch (err) {
+          pollStatusEl.textContent = `error: ${err}`;
+        }
+      };
+      supportBtn.addEventListener("click", () => vote("consent"));
+      objectBtn.addEventListener("click", () => vote("block"));
+      div.append(supportBtn, objectBtn);
+
+      pollsOutEl.appendChild(div);
+    }
+  } catch (err) {
+    pollsOutEl.textContent = `error: ${err}`;
+  }
+}
+
+document.getElementById("poll-refresh").addEventListener("click", refreshPolls);
+
 // --- Governance --------------------------------------------------------
 
 const govEligibleEl = document.getElementById("gov-eligible");

@@ -388,10 +388,23 @@ Recommended list, each tagged with its pattern:
     state cheaply. If wanted at all, it belongs on `iroh-gossip` (already
     a dependency, used for docs sync) as a live broadcast, not a synced
     document.
-  - **Polls** — this is governance's `Proposal`/`Signal` machinery,
-    already built and wired, just without calling it "polls" in the UI.
-    Worth surfacing as its own app-facing label rather than building a
-    second, separate mechanism.
+  - **Polls — built (2026-09-22).** A dedicated `dist` section, but
+    deliberately not a new mechanism: `create-poll`/the poll list call
+    the exact same `create_proposal`/`create_signal`/`list_proposals`
+    commands the full Governance section does, hardcoded to
+    `GovernanceClass::General` and filtered/relabeled client-side
+    (`main.js`) — Support/Object instead of Consent/Block, "passed"/
+    "did not pass" instead of Ratified/Blocked. No Rust changes at all.
+    Worded carefully, not just relabeled: the hint text says outright
+    **"not a majority vote"** — it's the same objection-window mechanic
+    as everything else here (passes by default unless enough people
+    explicitly object; silence counts as support), and calling it
+    "Polls" without saying so would have implied ordinary vote-counting
+    behavior the mechanism doesn't have. CLI parity not built — the CLI
+    has no governance commands at all yet (its own README's "Not built"
+    list), so "polls" there would mean building `propose`/`signal` from
+    scratch, not just relabeling; out of scope for what was actually a
+    UI-labeling exercise.
 
 None of these are built beyond what's named above as already existing
 (messaging's and images' primitives, governance-as-polls, the directory

@@ -170,11 +170,28 @@ this is a UI on top of.
   the namespace's sole genesis member here — this UI never prompts for
   co-founders at creation time, even though `found_namespace`/
   `resolve_founding` support a real multi-founder bootstrap. Anyone else
-  has to be admitted afterward through a real `AdmitCoSigner` Proposal,
-  which is correct, just not the only valid founding shape the protocol
-  allows. `list_proposals`/`governance_state` are also O(every record in
+  has to be admitted afterward through a real `AdmitCoSigner` Proposal.
+  **Deliberate, not a gap**: discussed with Jason (2026-09-22) and
+  decided not to build a multi-founder prompt — silence-ratifies-by-
+  default means inviting co-founders after solo creation costs about as
+  much friction as founding together would, and toxic-founder removal
+  already exists via governance; the mechanism (`resolve_founding`'s
+  acceptance-window design) still supports real multi-founder bootstrap
+  for anyone who builds a client that prompts for it, this one just
+  won't. `list_proposals`/`governance_state` are also O(every record in
   the namespace) per call — a caching or incremental-fold question once
   a namespace has more than a handful of proposals, not addressed here.
+- **Polls** (`dist`'s "Polls" section, above Governance): a
+  `GovernanceClass::General` Proposal, relabeled — `create-poll` and the
+  poll list call the *exact same* `create_proposal`/`create_signal`/
+  `list_proposals` commands as the full Governance section, hardcoded to
+  `class: "general"` and filtered/relabeled client-side only (Support/
+  Object instead of Consent/Block). No new Rust. Said outright in the
+  hint text, not left implied: **this is not a majority vote** — same
+  objection-window mechanic as everything else (passes by default unless
+  enough people explicitly object; silence counts as support) — calling
+  it "Polls" without that caveat would have implied ordinary
+  vote-counting behavior the mechanism doesn't have.
 - **Persistence** (`identity::Identity::load_or_generate`,
   `namespace::Node::spawn_persistent`, both new): real, not cosmetic.
   Found and fixed a genuine bug while wiring this, not something
