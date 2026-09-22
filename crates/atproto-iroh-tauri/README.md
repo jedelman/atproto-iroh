@@ -79,6 +79,33 @@ this is a UI on top of.
   `governance::subject_ref` uses for `Signal.subject` — restated locally
   in `messaging.rs` rather than sharing one function across two
   unrelated modules for a one-line format.
+- **Tags** (`tagging::add_tag`/`tags_for`, `dist`'s "Tags" section):
+  cross-lexicon by construction (Jason's explicit ask) — one `Tag` type
+  can tag a message, a Shared doc revision, a `NodeProfile`, anything,
+  via `records::record_ref`'s `"{author_hex}/{collection}/{rkey}"`
+  (the one reference format in this crate that actually carries the
+  collection name, since `governance::subject_ref`/`messaging::reply_ref`
+  only ever point within their own collection). Each message in the
+  Messages section gets a "Tag" button that fills in this panel's
+  subject field with that exact message's `record_ref` — no manual
+  copy-pasting required for the common case.
+- **Members / Profile** (`update_profile`/`list_profiles`, `dist`'s
+  "Members" section): `NodeProfile` editing separated from namespace
+  creation — `create_namespace_with_profile` still sets an initial
+  profile, but this lets an author update their own profile (name,
+  category, neighborhood) any time afterward, an overwrite of their own
+  fixed `NodeProfile::SELF_KEY` slot, safe by the same per-author-key
+  construction as everything else (SPEC.md §3.4). `list_profiles` is the
+  "who's here" view — every synced `NodeProfile`, unfiltered.
+- **Mute, wired now** (`mute_author`/`unmute_author`/`list_muted`, `dist`'s
+  "Mute" section): purely local, no sync, no lexicon (`mute::MuteList`'s
+  own doc comment). The one place it actually changes anything yet —
+  `list_messages` filters out muted authors before returning; every
+  other read path (the inspector, `list_profiles`) is untouched, since
+  filtering everything preemptively wasn't what was asked for and mute
+  is deliberately scoped per-feature, not global. A muted author's
+  messages still sync and still count for everyone else — this only
+  changes what this one reader's client shows them.
 - **QR codes** (`ticket_to_qr`): renders a ticket as an SVG QR, nothing
   else — no scanning/camera decode built (see below), no native OS share
   sheet integration (unverified whether Tauri 2 has one; not checked).
@@ -168,9 +195,6 @@ a real client would need them:
   supports it (`resolve_founding`'s whole acceptance-window design exists
   for exactly this case); this app just never prompts for it — see the
   Governance bullet above.
-- **Mute UI.** `mute::MuteList` exists and is tested; nothing here reads
-  or writes it. Also not yet persisted to the same data directory as
-  everything else now is — it still only takes an explicit path.
 - **QR scanning.** Generation only. Decoding would need webview camera
   access (`getUserMedia` + a JS decoder, e.g. `jsQR`) — plausible on
   desktop since Tauri's webview is a real browser engine, but camera

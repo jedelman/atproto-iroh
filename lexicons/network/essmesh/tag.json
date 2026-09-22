@@ -1,0 +1,30 @@
+{
+  "lexicon": 1,
+  "id": "network.essmesh.tag",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A tag applied to some other record, in ANY lexicon -- Jason's explicit requirement (2026-09-22): tags must cross lexicons, not be a per-record-type feature reimplemented for messages, documents, profiles, and anything else separately. One Tag type does this because 'subject' names a record by author + collection + rkey together (not just author + rkey the way network.essmesh.governance.signal's subject or network.essmesh.chat.message's replyTo do -- those only ever point within their own collection, so they don't need to say which collection; a cross-lexicon tag does). Append-only, same shape as network.essmesh.chat.message: every tag mints its own key, so any writer can tag any record without coordinating with anyone else or needing write access to the tagged record itself -- tagging something never mutates it.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["subject", "label", "createdAt"],
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "'{authorHex}/{collection}/{rkey}' naming the tagged record -- see records::record_ref in the core crate. Not a strongRef/CID reference (no content-addressing here, unlike signal.subject) -- a tag names a specific record slot, not a specific version of it."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 100,
+            "maxGraphemes": 50
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

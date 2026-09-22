@@ -118,6 +118,104 @@ document
     }
   });
 
+// --- Members / Profile ---------------------------------------------
+
+const membersOutEl = document.getElementById("members-out");
+const profileStatusEl = document.getElementById("profile-status");
+
+document
+  .getElementById("load-members")
+  .addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const namespaceId = document.getElementById("members-namespace-id").value;
+    membersOutEl.innerHTML = "";
+    try {
+      const members = await invoke("list_profiles", { namespaceId });
+      if (members.length === 0) {
+        membersOutEl.textContent = "(no profiles yet)";
+        return;
+      }
+      for (const m of members) {
+        const li = document.createElement("li");
+        const p = m.profile;
+        li.textContent = `${m.author_hex.slice(0, 8)}…  ${p.name} (${p.category})${p.neighborhood ? " — " + p.neighborhood : ""}`;
+        membersOutEl.appendChild(li);
+      }
+    } catch (err) {
+      membersOutEl.textContent = `error: ${err}`;
+    }
+  });
+
+document
+  .getElementById("update-profile")
+  .addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const namespaceId = document.getElementById("members-namespace-id").value;
+    const name = document.getElementById("profile-name").value;
+    const category = document.getElementById("profile-category").value;
+    const neighborhood = document.getElementById("profile-neighborhood").value || null;
+    profileStatusEl.textContent = "saving…";
+    try {
+      await invoke("update_profile", {
+        namespaceId,
+        name,
+        category,
+        neighborhood,
+        description: null,
+        governanceEligible: null,
+      });
+      profileStatusEl.textContent = `saved at ${new Date().toLocaleTimeString()}`;
+    } catch (err) {
+      profileStatusEl.textContent = `error: ${err}`;
+    }
+  });
+
+// --- Mute ------------------------------------------------------------
+
+const muteStatusEl = document.getElementById("mute-status");
+const mutedOutEl = document.getElementById("muted-out");
+
+async function refreshMuted() {
+  mutedOutEl.innerHTML = "";
+  try {
+    const muted = await invoke("list_muted");
+    for (const authorHex of muted) {
+      const li = document.createElement("li");
+      li.textContent = authorHex;
+      mutedOutEl.appendChild(li);
+    }
+  } catch (err) {
+    mutedOutEl.textContent = `error: ${err}`;
+  }
+}
+
+document.getElementById("mute-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const authorHex = document.getElementById("mute-author-hex").value;
+  muteStatusEl.textContent = "muting…";
+  try {
+    await invoke("mute_author", { authorHex });
+    muteStatusEl.textContent = "muted";
+    await refreshMuted();
+  } catch (err) {
+    muteStatusEl.textContent = `error: ${err}`;
+  }
+});
+
+document.getElementById("unmute-btn").addEventListener("click", async () => {
+  const authorHex = document.getElementById("mute-author-hex").value;
+  muteStatusEl.textContent = "unmuting…";
+  try {
+    await invoke("unmute_author", { authorHex });
+    muteStatusEl.textContent = "unmuted";
+    await refreshMuted();
+  } catch (err) {
+    muteStatusEl.textContent = `error: ${err}`;
+  }
+});
+
+refreshMuted();
+
 // --- Shared doc --------------------------------------------------------
 
 const docStatusEl = document.getElementById("doc-status");
@@ -197,7 +295,15 @@ async function refreshMessages() {
     for (const m of messages) {
       const li = document.createElement("li");
       const replyNote = m.reply_to ? ` (reply to ${m.reply_to})` : "";
-      li.textContent = `${m.author_hex.slice(0, 8)}…: ${m.text}${replyNote}`;
+      li.textContent = `${m.author_hex.slice(0, 8)}…: ${m.text}${replyNote} `;
+      const tagBtn = document.createElement("button");
+      tagBtn.type = "button";
+      tagBtn.textContent = "Tag";
+      tagBtn.addEventListener("click", () => {
+        document.getElementById("tag-namespace-id").value = namespaceId;
+        document.getElementById("tag-subject").value = m.subject;
+      });
+      li.appendChild(tagBtn);
       msgOutEl.appendChild(li);
     }
   } catch (err) {
@@ -228,6 +334,46 @@ document.getElementById("send-message").addEventListener("submit", async (event)
 });
 
 document.getElementById("msg-refresh").addEventListener("click", refreshMessages);
+
+// --- Tags ------------------------------------------------------------
+
+const tagStatusEl = document.getElementById("tag-status");
+const tagOutEl = document.getElementById("tag-out");
+
+document.getElementById("tag-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const namespaceId = document.getElementById("tag-namespace-id").value;
+  const subject = document.getElementById("tag-subject").value;
+  const label = document.getElementById("tag-label").value;
+  tagStatusEl.textContent = "tagging…";
+  try {
+    await invoke("add_tag", { namespaceId, subject, label });
+    tagStatusEl.textContent = `tagged at ${new Date().toLocaleTimeString()}`;
+    document.getElementById("tag-label").value = "";
+  } catch (err) {
+    tagStatusEl.textContent = `error: ${err}`;
+  }
+});
+
+document.getElementById("tag-load-btn").addEventListener("click", async () => {
+  const namespaceId = document.getElementById("tag-namespace-id").value;
+  const subject = document.getElementById("tag-subject").value;
+  tagOutEl.innerHTML = "";
+  try {
+    const tags = await invoke("tags_for", { namespaceId, subject });
+    if (tags.length === 0) {
+      tagOutEl.textContent = "(no tags on this subject yet)";
+      return;
+    }
+    for (const t of tags) {
+      const li = document.createElement("li");
+      li.textContent = `${t.label} — ${t.author_hex.slice(0, 8)}…`;
+      tagOutEl.appendChild(li);
+    }
+  } catch (err) {
+    tagOutEl.textContent = `error: ${err}`;
+  }
+});
 
 // --- Inbox ---------------------------------------------------------
 

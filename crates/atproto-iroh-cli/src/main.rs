@@ -23,10 +23,13 @@ use atproto_iroh_core::{
     fold,
     governance::{FoundingPolicy, PolicyValue},
     messaging,
+    mute::MuteList,
     namespace::{
-        dump_all, get_text, list_document_revisions, load_document, put_text,
+        decode_author_hex, dump_all, get_text, list_document_revisions, load_document, put_text,
         save_document_revision, Node,
     },
+    records::{record_ref, Record},
+    tagging,
 };
 use clap::{Parser, Subcommand};
 use iroh_docs::{api::protocol::ShareMode, DocTicket, NamespaceId};
@@ -142,6 +145,24 @@ enum Command {
     },
     /// Every message in a namespace, oldest first.
     Messages { namespace_id: String },
+    /// Tags a record anywhere in the namespace — `subject` is
+    /// "{author_hex}/{collection}/{rkey}" (`messages`'/`doc-history`'s
+    /// output gives you the author_hex/rkey half; the collection for a
+    /// message is `network.essmesh.chat.message`). One `Tag` type works
+    /// across every record type, in any lexicon.
+    Tag {
+        namespace_id: String,
+        subject: String,
+        label: String,
+    },
+    /// Every tag on one subject.
+    Tags { namespace_id: String, subject: String },
+    /// Mutes an author's content in this identity's own client — local
+    /// only, no sync, no lexicon (`mute::MuteList`'s doc comment).
+    Mute { author_hex: String },
+    Unmute { author_hex: String },
+    /// Every currently-muted author.
+    Muted,
 }
 
 #[derive(Clone, clap::ValueEnum)]
@@ -291,6 +312,39 @@ async fn run(
                 println!("{author_hex}/{rkey}  {author_hex}: {}{reply_note}", message.text);
             }
         }
+        Command::Tag { namespace_id, subject, label } => {
+            let doc = open(node, namespace_id).await?;
+            let rkey = tagging::add_tag(&doc, author, subject.clone(), label.clone()).await?;
+            println!(
+                "{}",
+                record_ref(&hex::encode(author.as_bytes()), tagging::Tag::COLLECTION, &rkey)
+            );
+        }
+        Command::Tags { namespace_id, subject } => {
+            let doc = open(node, namespace_id).await?;
+            let tags = tagging::tags_for(node, &doc, subject).await?;
+            for (tag_author, rkey, tag) in tags {
+                println!("{}/{rkey}  {}", hex::encode(tag_author.as_bytes()), tag.label);
+            }
+        }
+        Command::Mute { author_hex } => {
+            let target = decode_author_hex(author_hex).context("invalid author id")?;
+            let mut list: MuteList<iroh_docs::AuthorId> = MuteList::load(mute_path())?;
+            list.mute(target);
+            list.save(mute_path())?;
+        }
+        Command::Unmute { author_hex } => {
+            let target = decode_author_hex(author_hex).context("invalid author id")?;
+            let mut list: MuteList<iroh_docs::AuthorId> = MuteList::load(mute_path())?;
+            list.unmute(&target);
+            list.save(mute_path())?;
+        }
+        Command::Muted => {
+            let list: MuteList<iroh_docs::AuthorId> = MuteList::load(mute_path())?;
+            for author in list.iter() {
+                println!("{}", hex::encode(author.as_bytes()));
+            }
+        }
         Command::Serve { share, mode } => {
             // Reopen every namespace this node already holds a capability
             // into — same reason `spawn_node` does this in the Tauri
@@ -339,4 +393,18 @@ fn cli_data_dir() -> std::path::PathBuf {
 
 fn identity_path() -> std::path::PathBuf {
     cli_data_dir().join("identity")
+}
+
+/// Deliberately not `mute::MuteList::default_path()` — that resolves
+/// under the shared `paths::data_dir()` convention, the same place the
+/// Tauri app's own mute list lives, but this CLI already keeps its own
+/// identity and node storage under a separate `cli-agent/` subdirectory
+/// (this file's own top note on why) to avoid exactly this kind of
+/// cross-client collision. A local preference file isn't a file-lock
+/// hazard the way the docs/blobs stores are, but the CLI's own identity
+/// is a different `did:iroh` from the Tauri app's, so its mute
+/// preferences shouldn't silently share a file with a different
+/// identity's either.
+fn mute_path() -> std::path::PathBuf {
+    cli_data_dir().join("mute.json")
 }

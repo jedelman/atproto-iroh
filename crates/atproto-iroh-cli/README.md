@@ -80,6 +80,19 @@ this machine.
   last-write-wins risk, since every message gets its own key.
 - `messages <namespace-id>` — every message, oldest first, each line
   prefixed with its own ref.
+- `tag <namespace-id> <subject> <label>` — tags any record, in any
+  lexicon (`network.essmesh.tag`). `subject` is
+  `"{author_hex}/{collection}/{rkey}"` — `messages`'/`doc-history`'s
+  output gives the `author_hex`/`rkey` half; for a message the
+  collection is `network.essmesh.chat.message`.
+- `tags <namespace-id> <subject>` — every tag on one subject.
+- `mute <author-hex>` / `unmute <author-hex>` / `muted` — purely local,
+  no sync, no lexicon. Stored under this CLI's own `cli-agent/` data
+  directory, deliberately not `mute::MuteList::default_path()`'s shared
+  convention — see `mute_path`'s doc comment in `main.rs` for why: this
+  identity is a different `did:iroh` from the Tauri app's, so its mute
+  preferences shouldn't silently share a file with a different
+  identity's.
 
 ## Identity and storage
 
@@ -113,8 +126,10 @@ QUIC sync, not assumed from the single-process command tests alone.
 - **No governance commands yet** (`propose`/`signal`/`governance-state`)
   — `fold.rs`'s API exists and is tested, just not wired into this crate.
   Would follow the same shape as the `doc-*` commands.
-- **No mute-list commands.** `mute::MuteList` exists and is tested,
-  unused here, same gap the Tauri README already names for its own UI.
+- **No profile commands.** `mute`/`tag`/messaging all have CLI parity
+  with the Tauri shell now; `update_profile`/`list_profiles` don't —
+  this CLI's `create-namespace` still doesn't publish a `NodeProfile` at
+  all, unlike Tauri's `create_namespace_with_profile`.
 - **Not packaged as a Claude Code skill.** Jason's ask named "a cli or
   skill" as alternatives; this is the CLI half. A skill wrapping these
   commands (so an agent invokes `/atproto-iroh ...` instead of shelling

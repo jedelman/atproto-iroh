@@ -17,11 +17,13 @@ use atproto_iroh_core::{
     },
     identity::Identity,
     messaging,
+    mute::MuteList,
     namespace::{
-        decode_author_hex, dump_all, list_document_revisions, load_document, put_record,
-        save_document_revision, submit_text, NetworkPreset, Node, RawEntry,
+        decode_author_hex, dump_all, list_document_revisions, list_records, load_document,
+        put_record, save_document_revision, submit_text, NetworkPreset, Node, RawEntry,
     },
-    records::{NodeCategory, NodeProfile},
+    records::{record_ref, NodeCategory, NodeProfile, Record},
+    tagging,
 };
 use chrono::Duration as ChronoDuration;
 use iroh_docs::{api::protocol::ShareMode, api::Doc, AuthorId, DocTicket};
@@ -92,6 +94,25 @@ struct AppState {
     /// `did:iroh`) for the reason `namespace.rs`'s own doc comment
     /// gives: an `Author` signs entries, it isn't the node's identity.
     author: Mutex<Option<AuthorId>>,
+    /// Purely local, unsynced, no protocol surface — `mute::MuteList`'s
+    /// own doc comment. Loaded lazily from `MuteList::default_path()`
+    /// (same `paths::data_dir()` convention, and the same
+    /// `$ATPROTO_IROH_DATA_DIR` override, as everything else this app
+    /// persists) the first time any mute-related command runs, not at
+    /// `spawn_node` — nothing about it depends on the node being up.
+    mute: Mutex<Option<MuteList<AuthorId>>>,
+}
+
+/// Loads the mute list on first use, same lazy-init shape as
+/// `ensure_author`. Returns the list's current muted set as a plain
+/// value (not a guard) so a caller can check membership without holding
+/// the lock across an `.await`.
+async fn ensure_mute_loaded(state: &AppState) -> Result<(), String> {
+    let mut mute = state.mute.lock().await;
+    if mute.is_none() {
+        *mute = Some(MuteList::load(MuteList::<AuthorId>::default_path()).map_err(|e| e.to_string())?);
+    }
+    Ok(())
 }
 
 async fn ensure_author(state: &AppState) -> Result<AuthorId, String> {
@@ -229,6 +250,75 @@ async fn create_namespace_with_profile(
 #[tauri::command]
 async fn list_namespaces(state: State<'_, AppState>) -> Result<Vec<String>, String> {
     Ok(state.docs.lock().await.keys().cloned().collect())
+}
+
+/// Updates this author's own `NodeProfile` in an existing namespace —
+/// `NodeProfile::SELF_KEY` is a fixed per-author slot (same convention
+/// `Founding`/`records::key_for` document elsewhere), so this is a plain
+/// overwrite of this author's own entry, not a new record each time;
+/// nobody else can write at this key under this author (`RecordIdentifier`,
+/// SPEC.md §3.4). Separated from `create_namespace_with_profile` so a
+/// profile can be edited any time after founding, not just set once at
+/// creation.
+#[tauri::command]
+async fn update_profile(
+    state: State<'_, AppState>,
+    namespace_id: String,
+    name: String,
+    category: NodeCategory,
+    neighborhood: Option<String>,
+    description: Option<String>,
+    governance_eligible: Option<bool>,
+) -> Result<(), String> {
+    let author = ensure_author(&state).await?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    let profile = NodeProfile {
+        name,
+        category,
+        neighborhood,
+        description,
+        governance_eligible,
+        created_at: chrono::Utc::now(),
+    };
+    put_record(doc, author, NodeProfile::SELF_KEY, &profile)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct ProfileView {
+    author_hex: String,
+    profile: NodeProfile,
+}
+
+/// Every member's `NodeProfile` currently synced into a namespace — the
+/// "who's here" view; `list_records` already does the real work, this
+/// just attaches each profile to its author in a JSON-friendly shape.
+#[tauri::command]
+async fn list_profiles(
+    state: State<'_, AppState>,
+    namespace_id: String,
+) -> Result<Vec<ProfileView>, String> {
+    let node = state.node.lock().await;
+    let node = node.as_ref().ok_or("call spawn_node first")?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    let profiles = list_records::<NodeProfile>(node, doc)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(profiles
+        .into_iter()
+        .map(|(author, _rkey, profile)| ProfileView {
+            author_hex: hex::encode(author.as_bytes()),
+            profile,
+        })
+        .collect())
 }
 
 /// Shares a namespace this node already has open — `Node::share`,
@@ -440,18 +530,29 @@ async fn send_message(
 struct MessageView {
     author_hex: String,
     rkey: String,
+    /// `records::record_ref` for this exact message — the frontend passes
+    /// this straight to `add_tag`/`tags_for` without needing to know
+    /// `Message::COLLECTION` itself.
+    subject: String,
     text: String,
     reply_to: Option<String>,
     created_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Every message in a namespace, oldest first — `messaging::list_messages`
-/// unwrapped for the UI.
+/// Every message in a namespace, oldest first, with muted authors
+/// filtered out — `messaging::list_messages` unwrapped for the UI, plus
+/// the one place mute actually matters (`mute::MuteList`'s own doc
+/// comment: purely local, changes what one reader's client shows them,
+/// nothing about sync — the message still syncs and still counts for
+/// everyone else, it just doesn't render here). Sync is untouched:
+/// muted authors' messages still land on disk, this only filters what
+/// this function returns.
 #[tauri::command]
 async fn list_messages(
     state: State<'_, AppState>,
     namespace_id: String,
 ) -> Result<Vec<MessageView>, String> {
+    ensure_mute_loaded(&state).await?;
     let node = state.node.lock().await;
     let node = node.as_ref().ok_or("call spawn_node first")?;
     let docs = state.docs.lock().await;
@@ -461,14 +562,116 @@ async fn list_messages(
     let messages = messaging::list_messages(node, doc)
         .await
         .map_err(|e| e.to_string())?;
+    let mute = state.mute.lock().await;
+    let mute = mute.as_ref().expect("loaded above");
     Ok(messages
         .into_iter()
-        .map(|(author, rkey, message)| MessageView {
+        .filter(|(author, _, _)| !mute.is_muted(author))
+        .map(|(author, rkey, message)| {
+            let author_hex = hex::encode(author.as_bytes());
+            let subject = record_ref(&author_hex, messaging::Message::COLLECTION, &rkey);
+            MessageView {
+                author_hex,
+                rkey,
+                subject,
+                text: message.text,
+                reply_to: message.reply_to,
+                created_at: message.created_at,
+            }
+        })
+        .collect())
+}
+
+/// Mutes an author's content in this reader's own client — local only,
+/// no sync, no lexicon; see `mute::MuteList`'s doc comment for why this
+/// carries no protocol surface at all. Takes a hex-encoded author id
+/// (the same form every other command that names an author uses) rather
+/// than asking the frontend to construct an `AuthorId` itself.
+#[tauri::command]
+async fn mute_author(state: State<'_, AppState>, author_hex: String) -> Result<(), String> {
+    ensure_mute_loaded(&state).await?;
+    let author = decode_author_hex(&author_hex).ok_or("invalid author id")?;
+    let mut mute = state.mute.lock().await;
+    let mute = mute.as_mut().expect("loaded above");
+    mute.mute(author);
+    mute.save(MuteList::<AuthorId>::default_path()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn unmute_author(state: State<'_, AppState>, author_hex: String) -> Result<(), String> {
+    ensure_mute_loaded(&state).await?;
+    let author = decode_author_hex(&author_hex).ok_or("invalid author id")?;
+    let mut mute = state.mute.lock().await;
+    let mute = mute.as_mut().expect("loaded above");
+    mute.unmute(&author);
+    mute.save(MuteList::<AuthorId>::default_path()).map_err(|e| e.to_string())
+}
+
+/// Every currently-muted author, hex-encoded.
+#[tauri::command]
+async fn list_muted(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    ensure_mute_loaded(&state).await?;
+    let mute = state.mute.lock().await;
+    let mute = mute.as_ref().expect("loaded above");
+    Ok(mute.iter().map(|a| hex::encode(a.as_bytes())).collect())
+}
+
+/// Tags a record anywhere in the namespace — `tagging::add_tag`
+/// unwrapped for the UI. `subject` is a `records::record_ref` string
+/// (`"{author_hex}/{collection}/{rkey}"`); the frontend builds one from
+/// whatever it already displays (a message's `author_hex`/`rkey` plus
+/// the known `network.essmesh.chat.message` collection, a document
+/// revision's own ref, anything) rather than this command constructing
+/// it, since this command has no way to know what kind of record is
+/// being tagged.
+#[tauri::command]
+async fn add_tag(
+    state: State<'_, AppState>,
+    namespace_id: String,
+    subject: String,
+    label: String,
+) -> Result<String, String> {
+    let author = ensure_author(&state).await?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    tagging::add_tag(doc, author, subject, label)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+struct TagView {
+    author_hex: String,
+    rkey: String,
+    subject: String,
+    label: String,
+}
+
+/// Every tag on one `subject` — `tagging::tags_for` unwrapped for the UI.
+#[tauri::command]
+async fn tags_for(
+    state: State<'_, AppState>,
+    namespace_id: String,
+    subject: String,
+) -> Result<Vec<TagView>, String> {
+    let node = state.node.lock().await;
+    let node = node.as_ref().ok_or("call spawn_node first")?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    let tags = tagging::tags_for(node, doc, &subject)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(tags
+        .into_iter()
+        .map(|(author, rkey, tag)| TagView {
             author_hex: hex::encode(author.as_bytes()),
             rkey,
-            text: message.text,
-            reply_to: message.reply_to,
-            created_at: message.created_at,
+            subject: tag.subject,
+            label: tag.label,
         })
         .collect())
 }
@@ -665,6 +868,13 @@ fn main() {
             submit_to_inbox,
             send_message,
             list_messages,
+            update_profile,
+            list_profiles,
+            mute_author,
+            unmute_author,
+            list_muted,
+            add_tag,
+            tags_for,
             list_proposals,
             governance_state,
             create_proposal,

@@ -30,6 +30,34 @@ pub fn key_for<R: Record>(rkey: &str) -> Vec<u8> {
     key(R::COLLECTION, rkey)
 }
 
+/// Names one record anywhere in a namespace, across *any* lexicon —
+/// `"{author_hex}/{collection}/{rkey}"`. `RecordIdentifier` (SPEC.md
+/// §3.4) is already `(namespace, author, key)` where
+/// `key = "{collection}/{rkey}"`; this spells that same addressing
+/// scheme out as a plain string a *different* record type can carry as
+/// a reference. `governance::subject_ref`/`messaging::reply_ref` don't
+/// need the collection half — a `Signal` only ever targets a `Proposal`,
+/// a reply only ever targets another `Message`, so the collection is
+/// implicit — but a cross-lexicon reference (`tagging::Tag.subject`,
+/// which can point at a message, a document revision, a proposal,
+/// anything) genuinely needs it, or two records in different
+/// collections that happen to share an `rkey` would be ambiguous.
+pub fn record_ref(author_hex: &str, collection: &str, rkey: &str) -> String {
+    format!("{author_hex}/{collection}/{rkey}")
+}
+
+/// Inverse of `record_ref`. `None` if `s` isn't in the expected
+/// three-part shape — same "don't error, just say this reference isn't
+/// one this reader understands" convention
+/// `governance::parse_subject_ref` uses.
+pub fn parse_record_ref(s: &str) -> Option<(&str, &str, &str)> {
+    let mut parts = s.splitn(3, '/');
+    let author_hex = parts.next()?;
+    let collection = parts.next()?;
+    let rkey = parts.next()?;
+    Some((author_hex, collection, rkey))
+}
+
 /// `network.essmesh.node.profile` — `lexicons/network/essmesh/node/profile.json`.
 /// Single record per repo, key `self` (the lexicon's `"key": "literal:self"`).
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
@@ -100,6 +128,16 @@ mod tests {
         assert_eq!(
             key_for::<NodeProfile>(NodeProfile::SELF_KEY),
             b"network.essmesh.node.profile/self".to_vec()
+        );
+    }
+
+    #[test]
+    fn record_ref_round_trips_across_collections() {
+        let r = record_ref("abcd", "network.essmesh.chat.message", "0001");
+        assert_eq!(r, "abcd/network.essmesh.chat.message/0001");
+        assert_eq!(
+            parse_record_ref(&r),
+            Some(("abcd", "network.essmesh.chat.message", "0001"))
         );
     }
 

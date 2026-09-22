@@ -15,6 +15,8 @@
 //! - [`mute`] — local, unsynced per-reader mute (§6 item 12)
 //! - [`paths`] — the shared, overridable local-data-directory convention
 //!   `identity`/`namespace`/`mute` all persist under
+//! - [`tagging`] — `network.essmesh.tag` (batteries-included app list),
+//!   cross-lexicon by construction via `records::record_ref`
 
 pub mod fold;
 pub mod governance;
@@ -24,3 +26,4 @@ pub mod mute;
 pub mod namespace;
 pub mod paths;
 pub mod records;
+pub mod tagging;

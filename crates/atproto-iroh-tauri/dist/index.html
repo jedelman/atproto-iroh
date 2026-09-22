@@ -57,6 +57,70 @@
       </section>
 
       <section>
+        <h2>Members</h2>
+        <p class="hint">
+          Every <code>NodeProfile</code> currently synced into a
+          namespace — "who's here." Editing your own profile here
+          overwrites your one fixed profile slot (safe: nobody else can
+          write at your author's key); it doesn't create a new record
+          each time.
+        </p>
+        <form id="load-members">
+          <label>
+            Namespace id
+            <input id="members-namespace-id" type="text" required />
+          </label>
+          <button type="submit">Load members</button>
+        </form>
+        <ul id="members-out"></ul>
+        <form id="update-profile">
+          <label>
+            Name
+            <input id="profile-name" type="text" required />
+          </label>
+          <label>
+            Category
+            <select id="profile-category">
+              <option value="coop_housing_clt">Housing co-op / CLT</option>
+              <option value="worker_coop">Worker co-op</option>
+              <option value="worker_coop_ethical_finance">
+                Worker co-op, ethical finance
+              </option>
+              <option value="public_cooperative_facility">
+                Public cooperative facility
+              </option>
+              <option value="standard_commercial">Standard commercial</option>
+            </select>
+          </label>
+          <label>
+            Neighborhood
+            <input id="profile-neighborhood" type="text" />
+          </label>
+          <button type="submit">Update my profile</button>
+        </form>
+        <p id="profile-status" class="value">—</p>
+      </section>
+
+      <section>
+        <h2>Mute</h2>
+        <p class="hint">
+          Purely local — no sync, no lexicon, changes nothing about what
+          anyone else sees or whether a muted author's content keeps
+          syncing (it does). Just filters what Messages shows you.
+        </p>
+        <form id="mute-form">
+          <label>
+            Author hex
+            <input id="mute-author-hex" type="text" required />
+          </label>
+          <button type="submit">Mute</button>
+          <button type="button" id="unmute-btn">Unmute</button>
+        </form>
+        <p id="mute-status" class="value">—</p>
+        <ul id="muted-out"></ul>
+      </section>
+
+      <section>
         <h2>Share a namespace</h2>
         <form id="share-namespace">
           <label>
@@ -165,6 +229,35 @@
         </form>
         <p id="msg-status" class="value">—</p>
         <ul id="msg-out"></ul>
+      </section>
+
+      <section>
+        <h2>Tags</h2>
+        <p class="hint">
+          One <code>Tag</code> type works across every record type, in
+          any lexicon — tag a message, a Shared doc revision, anything
+          with a <code>subject</code> ref. Click "Tag" next to a message
+          above to fill the subject in below, or paste one manually
+          ("{authorHex}/{collection}/{rkey}").
+        </p>
+        <form id="tag-form">
+          <label>
+            Namespace id
+            <input id="tag-namespace-id" type="text" required />
+          </label>
+          <label>
+            Subject
+            <input id="tag-subject" type="text" required />
+          </label>
+          <label>
+            Label
+            <input id="tag-label" type="text" required />
+          </label>
+          <button type="submit">Tag</button>
+          <button type="button" id="tag-load-btn">Load tags for subject</button>
+        </form>
+        <p id="tag-status" class="value">—</p>
+        <ul id="tag-out"></ul>
       </section>
 
       <section>

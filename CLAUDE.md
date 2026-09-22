@@ -304,10 +304,28 @@ Recommended list, each tagged with its pattern:
   entry referencing it via `iroh-blobs`' content addressing); no new
   sync primitive needed, but real work in surfacing/thumbnailing that
   this repo hasn't touched.
-- **Tagging** — append-only if modeled right: a tag application is its
-  own small record (`{who, what, tag, when}`), not a mutation of the
-  tagged item's own entry, so multiple people tagging the same thing
-  concurrently just accumulates rather than racing.
+- **Tagging — built (2026-09-22), and cross-lexicon by construction**
+  (Jason's explicit requirement). `crates/atproto-iroh-core/src/
+  tagging.rs`: `Tag` (`network.essmesh.tag`,
+  `lexicons/network/essmesh/tag.json`), `add_tag`/`list_all_tags`/
+  `tags_for`. Append-only, same shape as messaging — a tag is its own
+  small record, not a mutation of the tagged item's own entry, so
+  multiple people tagging the same thing concurrently just accumulates.
+  The cross-lexicon part needed a new shared primitive:
+  `records::record_ref`/`parse_record_ref`
+  (`"{author_hex}/{collection}/{rkey}"`) — unlike `governance::
+  subject_ref`/`messaging::reply_ref`, which only ever point within
+  their own collection (a `Signal` always targets a `Proposal`, a reply
+  always targets a `Message`), a tag can point at *any* record in *any*
+  collection, so it's the one reference format that actually has to
+  carry the collection name. Proven live in
+  `crates/atproto-iroh-core/tests/tagging.rs`: the same `Tag` type tags
+  a real `network.essmesh.chat.message` and a plain freeform document
+  revision (no lexicon at all) in one test, both sync, both are found
+  correctly by `tags_for` — no per-record-type tagging code anywhere.
+  Wired into both clients: Tauri's `add_tag`/`tags_for` commands (a
+  "Tag" button on each message in `dist`'s Messages section fills in the
+  Tags panel's subject field) and the CLI's `tag`/`tags` subcommands.
 - **Search** — not a sync-pattern question at all; a local index over
   whatever's already synced (`dump_all`'s reflective read is the
   existing hook a naive version could build on). No offline-conflict
