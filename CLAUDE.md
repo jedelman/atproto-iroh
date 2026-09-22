@@ -27,14 +27,28 @@ real modules now (`identity`, `namespace`, `records`, `governance`,
 tests for the pure governance/ratification logic plus one live two-node
 integration test doing real QUIC sync.
 
-What's still genuinely unbuilt: governance isn't wired to `namespace.rs`
-yet (the ratification logic and the sync layer are both real and tested,
-just not plugged into each other), and there's no client at all — see
-"Client" below. If a future `iroh-docs` upgrade or new finding turns any
-of the resolved SPEC.md forks out to be wrong, don't patch around it
-quietly — revise the relevant section the same way every previous
-revision is recorded, old reasoning kept visible, not deleted. That's the
-established practice in this document; keep it.
+Governance is wired now (Tauri's "Client" section below), persistence and
+at-rest encryption are real, and a version-preserving document primitive
+(`namespace::save_document_revision`/`list_document_revisions`/
+`load_document`) exists to fix a real, confirmed CRDT data-loss case —
+see SPEC.md's 2026-09-22 note right before §6 for the finding and
+`crates/atproto-iroh-core/tests/document_revisions.rs` for the live
+proof. There's also a second client now: `crates/atproto-iroh-cli`, a
+one-shot-process-per-command Linux CLI plus a `serve` mode for anything
+that needs to stay reachable — see its own README, including a real bug
+it found and fixed live (a `share` ticket naming a port nothing was still
+listening on, once the process that issued it had already exited).
+
+What's still genuinely unbuilt: the Tauri "Shared doc" UI hasn't been
+switched from the lossy `put_text` primitive to the new revision-based
+one yet (Tauri README's own note), there's no real founding-record
+mechanism for governance (still resting on a placeholder), and mobile
+(Android/iOS, CLAUDE.md's platform-priority section) hasn't been started
+at all. If a future `iroh-docs` upgrade or new finding turns any of the
+resolved SPEC.md forks out to be wrong, don't patch around it quietly —
+revise the relevant section the same way every previous revision is
+recorded, old reasoning kept visible, not deleted. That's the established
+practice in this document; keep it.
 
 ## Language and structure
 
@@ -139,6 +153,152 @@ architecture — don't build one speculatively; if a shared-UI-toolkit
 seam becomes obvious once a few such PRs or separate apps actually
 exist, extract it then, from evidence, the same way this repo's own
 crate boundaries got decided.
+
+## Federation model, platform priority, and background execution
+
+Jason's framing (2026-09-22): this is for **tight autonomous orgs to
+federate**, not a consumer app aiming for always-on personal devices as
+its baseline. Some orgs are expected to stand up their own lightweight
+node — self-hosted now, possibly a Jason-hosted option later — that stays
+up and acts as a durable peer for that org's namespaces. That single fact
+resolves what would otherwise be a hard problem below.
+
+**Platform priority, for the record: Android, then iOS, then Linux, then
+Windows.** Phones first because that's where non-technical members
+actually are; desktop Linux/Windows matter more for the org-run
+lightweight-node case than for member-facing UX.
+
+**Background execution — fleshed out, not relied on.** The naive
+assumption ("the app just stays running and syncs") breaks hardest on
+Android: Doze/App Standby aggressively suspends processes and kills
+sockets for anything not foregrounded or allowlisted, so a bare iroh
+`Endpoint` sitting in a background service will get its QUIC connections
+cut, unpredictably, the moment the OS decides the app is idle. The real
+options, in the order an Android build would reach for them:
+1. A **foreground service** with a persistent notification — the only
+   way to get a real background socket on modern Android, and it costs
+   the user a permanent "atproto-iroh is running" notification, which is
+   a real UX tax for a tech-hostile audience, not a footnote.
+2. **Battery-optimization allowlisting** (`REQUEST_IGNORE_BATTERY_
+   OPTIMIZATIONS` or user-driven exemption) — needed even with a
+   foreground service on some OEM skins (Samsung/Xiaomi/etc. layer their
+   own aggressive killers on top of stock Android), and it's a
+   permission prompt most users will decline or not understand.
+3. `WorkManager`-scheduled periodic sync as a fallback for when neither
+   of the above holds — bounded, OS-throttled (minimum ~15 minute
+   intervals), so it's a "catch up eventually" mechanism, not a
+   real-time one.
+
+None of this is being built now, and — per Jason's explicit call —
+**the architecture is not allowed to depend on it working.** The
+federation model above is exactly why that's safe to defer: a phone that
+opens the app, syncs against the org's always-on node (or any other peer
+it can reach), and then closes is a complete, correct participant. The
+org's lightweight node is what actually needs to be reachable
+continuously; individual members' phones don't, and pretending otherwise
+would mean building real complexity (steps 1–3) to solve a problem the
+federation topology already solves at the org layer. iroh's own relay
+fallback (`presets::N0`, not the `presets::Minimal` used in this repo's
+tests so far) still matters here independent of background execution —
+CGNAT and network-switching on mobile mean direct QUIC isn't always
+reachable even in the foreground, so a relay-capable preset is the right
+default for any Android build, separate from the backgrounding question.
+
+**Android storage**, noted for whenever platform work starts: the
+sandboxed-storage model doesn't match `paths.rs`'s current Unix/XDG
+convention (`$ATPROTO_IROH_DATA_DIR`, `$XDG_DATA_HOME`, `$HOME` fallback)
+— Android apps get a fixed per-app private directory
+(`Context.getFilesDir()`/`getExternalFilesDir()`), not an
+environment-variable-driven path, so `paths::data_dir()` will need an
+Android-specific branch (or a value injected from the host app) rather
+than reusing the desktop env-var convention verbatim. Separately, this
+mostly *simplifies* the at-rest-encryption story on Android versus
+desktop: Android encrypts app-private storage by default at the OS level
+(unlike desktop, where `$ATPROTO_IROH_DATA_DIR` pointing at an encrypted
+volume is opt-in) — so the "point it at an encrypted volume" feature
+built this session is a desktop-specific concern, not something Android
+needs replicated.
+
+## Batteries-included app list (recommendation, not yet built)
+
+Jason's ask (2026-09-22): for a non-technical/tech-hostile user base,
+what should ship by default rather than being left to a future PR?
+Grounded in the CRDT finding just above — every candidate below falls
+into one of two patterns, and which one it falls into is the real design
+question for each, not a UI detail:
+
+- **Append-only / unique-key** (safe automatically, no extra work): each
+  write gets its own key, so offline edits from different people never
+  collide. Already the shape `NodeProfile`, `Proposal`/`Signal`, and
+  `submit_text` use.
+- **Shared mutable state** (needs the revision-history treatment just
+  built, or an explicit "latest wins is fine here" call): multiple
+  people can edit the *same* logical thing, so silent last-write-wins
+  loss is a real risk unless it's deliberately either revisioned or
+  accepted.
+
+Recommended list, each tagged with its pattern:
+
+- **Messaging** — append-only by nature (a chat is already a sequence of
+  independent messages, one key per message, same shape `submit_text`
+  already proves out). The natural first app to build, since it needs no
+  new primitive at all.
+- **Documents** — shared mutable state; this is exactly what
+  `save_document_revision`/`list_document_revisions`/`load_document`
+  (just built) are for. Needs real UI on top: showing "someone else
+  edited this while you were offline" and a merge/pick step, not just
+  silently picking the latest revision the way `load_document`'s default
+  does.
+- **Images** — append-only (each upload is its own blob + one metadata
+  entry referencing it via `iroh-blobs`' content addressing); no new
+  sync primitive needed, but real work in surfacing/thumbnailing that
+  this repo hasn't touched.
+- **Tagging** — append-only if modeled right: a tag application is its
+  own small record (`{who, what, tag, when}`), not a mutation of the
+  tagged item's own entry, so multiple people tagging the same thing
+  concurrently just accumulates rather than racing.
+- **Search** — not a sync-pattern question at all; a local index over
+  whatever's already synced (`dump_all`'s reflective read is the
+  existing hook a naive version could build on). No offline-conflict
+  story because it's derived, read-only state, never itself synced.
+- **Calendar** — the one candidate whose right pattern isn't obvious
+  either way: an *event* (append-only, like a message) versus an *edit to
+  an existing event* (shared-mutable, same doc-revision problem as
+  documents — two people rescheduling the same meeting offline is a real
+  case). Recommend modeling events as append-only creation plus
+  revisioned edits, same shape as documents, rather than a single
+  mutable event record.
+- **Suggested additions**, not asked for but falling naturally out of
+  what's already built:
+  - **A member directory** — mostly already exists as a byproduct of
+    `NodeProfile` plus `list_records`; needs UI, not new sync design.
+  - **Presence/"who's around"** — deliberately *not* worth building on
+    this substrate as a persisted record type; presence is inherently
+    ephemeral and this system has no server to hold "currently online"
+    state cheaply. If wanted at all, it belongs on `iroh-gossip` (already
+    a dependency, used for docs sync) as a live broadcast, not a synced
+    document.
+  - **Polls** — this is governance's `Proposal`/`Signal` machinery,
+    already built and wired, just without calling it "polls" in the UI.
+    Worth surfacing as its own app-facing label rather than building a
+    second, separate mechanism.
+
+None of these are built beyond what's named above as already existing
+(messaging's and images' primitives, governance-as-polls, the directory
+byproduct). This is a recommendation and a pattern classification, not a
+commitment to build the remaining UI this session.
+
+## Linux CLI
+
+`crates/atproto-iroh-cli` (binary `atproto-iroh`) — a second, non-GUI
+client for driving a node from a script or local agent, separate from
+Tauri's identity/data directory on purpose (`cli-agent/` subdirectory, so
+the two can't file-lock-collide running side by side). One-shot process
+per command, plus a `serve` mode for anything that needs to actually be
+reachable — see its own README for the real bug this found (a `share`
+ticket naming a stale port once its issuing process exits) and the fix
+(`serve --share`), verified as a genuine two-process QUIC sync, not just
+compiled.
 
 ## Lexicons
 

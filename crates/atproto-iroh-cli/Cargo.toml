@@ -1,0 +1,21 @@
+[package]
+name = "atproto-iroh-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Local Linux CLI for driving atproto-iroh-core from a script or agent — see CLAUDE.md's federation-model section for why this exists (an org's always-on node needs something other than a GUI to drive it) and its own README for exact command shapes."
+
+[[bin]]
+name = "atproto-iroh"
+path = "src/main.rs"
+
+[dependencies]
+atproto-iroh-core = { path = "../atproto-iroh-core" }
+iroh-docs = "0.101.0"
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1.53.1", features = ["full"] }
+anyhow = "1"
+serde_json = "1"
+hex = "0.4"

@@ -254,6 +254,90 @@ pub async fn submit_text(
     Ok(key)
 }
 
+/// A revision key under `{doc_id}/rev/` — see `save_document_revision`.
+fn revision_key(doc_id: &str, rev: &str) -> String {
+    format!("{doc_id}/rev/{rev}")
+}
+
+/// Writes a new, immutable revision of a document rather than overwriting
+/// a shared key in place. **Why this exists, not `put_text`**: `put_text`
+/// writes every edit to the *same* `(namespace, author, key)` entry, and
+/// `iroh-docs` resolves two writes to that exact tuple by its own `Record`
+/// ordering (timestamp, then hash) — last write wins, and the loser is
+/// gone, not merged. That's silent and lossless-looking right up until two
+/// people edit the same shared doc while offline from each other: each
+/// sees their own edit locally, and when they finally reconnect, one
+/// edit vanishes with no conflict, no warning, nothing in the UI to show
+/// it ever existed. Fine for genuinely single-writer text (notes only one
+/// person ever touches) or content where "latest wins" is actually the
+/// desired semantics (a status line); wrong for anything meant as a real
+/// shared "Google doc without Google."
+///
+/// This sidesteps the problem the same way `submit_text` sidesteps
+/// inbox-submission collisions: give every write its own key
+/// (`new_entry_key`, sortable by creation time) instead of sharing one.
+/// Nothing is ever overwritten, so nothing is ever silently lost — two
+/// offline edits to the same document become two revisions that both
+/// survive sync, at the cost of the caller (or a human) having to decide
+/// what "current" means when more than one revision lands close together.
+/// `load_document` below picks the latest by key as a default, not a
+/// claim that it's automatically the "right" one to keep.
+pub async fn save_document_revision(
+    doc: &Doc,
+    author: AuthorId,
+    doc_id: &str,
+    text: &str,
+) -> Result<String> {
+    let rev = new_entry_key();
+    put_text(doc, author, &revision_key(doc_id, &rev), text).await?;
+    Ok(rev)
+}
+
+/// Every revision of `doc_id` currently synced, oldest first (sorted by
+/// `new_entry_key`'s own sortable form, which is also `iroh-docs`' key
+/// sort order since it's a zero-padded decimal string). A caller that
+/// wants to show "someone else edited this while you were offline —
+/// here's both versions" reads this, not just `load_document`.
+pub async fn list_document_revisions(
+    node: &Node,
+    doc: &Doc,
+    doc_id: &str,
+) -> Result<Vec<(AuthorId, String, String)>> {
+    let prefix = format!("{doc_id}/rev/").into_bytes();
+    let stream = doc.get_many(Query::key_prefix(prefix)).await?;
+    tokio::pin!(stream);
+    let mut out = Vec::new();
+    while let Some(entry) = stream.next().await {
+        let entry = entry?;
+        let author = entry.author();
+        let key = std::str::from_utf8(entry.key())?;
+        let rev = key
+            .rsplit('/')
+            .next()
+            .map(str::to_string)
+            .ok_or_else(|| anyhow::anyhow!("malformed revision key {key:?}"))?;
+        let bytes = node.blob_store().get_bytes(entry.content_hash()).await?;
+        let text = String::from_utf8(bytes.to_vec())?;
+        out.push((author, rev, text));
+    }
+    out.sort_by(|a, b| a.1.cmp(&b.1));
+    Ok(out)
+}
+
+/// The latest revision of `doc_id` by key order — a convenience default
+/// for "what should I show right now," not a claim that a later
+/// timestamp is semantically correct when two people edited concurrently.
+/// A caller that cares about that distinction should call
+/// `list_document_revisions` directly and decide.
+pub async fn load_document(
+    node: &Node,
+    doc: &Doc,
+    doc_id: &str,
+) -> Result<Option<(String, AuthorId, String)>> {
+    let mut revisions = list_document_revisions(node, doc, doc_id).await?;
+    Ok(revisions.pop().map(|(author, rev, text)| (rev, author, text)))
+}
+
 /// Parses a hex-encoded `AuthorId` — the inverse of the
 /// `hex::encode(author.as_bytes())` convention used throughout this
 /// crate (`governance.rs`'s `subject_ref`, `Proposal.subject_member`) and

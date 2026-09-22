@@ -814,6 +814,58 @@ residual risk is volume, not forgery — the same resource-attack case §6
 item 12 already named, just with the probability turned up by making the
 ticket public on purpose instead of handing it to people individually.
 
+**Confirmed live, not assumed from "it's a CRDT": what actually happens
+when two peers edit offline and don't reconnect for a while.** Jason
+asked this directly (2026-09-22) and the honest answer splits in two,
+proven by two different live tests rather than by reading `iroh-docs`'
+docs and trusting them:
+
+- **Per-`(author, key)` writes are genuinely safe.** `NodeProfile`,
+  `Proposal`/`Signal`, and `submit_text` inbox entries each get their own
+  key (author's own record slot, or a fresh `new_entry_key()` per call).
+  Two offline authors writing different keys never touch the same entry,
+  so reconnecting is a pure union — nothing is ever at risk of being
+  discarded, because there was never a conflict to resolve.
+- **A single shared key written by two offline authors is
+  last-writer-wins, and the loser is silently discarded.**
+  `namespace::put_text` at one fixed key — the "Shared doc" primitive as
+  it stood before this revision — resolves concurrent writes to that
+  exact `(namespace, author, key)` tuple by `iroh_docs::sync::Record`'s
+  own `Ord` (timestamp, then hash). Two people editing the same "doc" on
+  separate flights and landing hours apart: both devices show their own
+  edit as correct the whole time they're offline: no error, no pending-
+  merge indicator, nothing suggesting a conflict is coming, because
+  locally there isn't one yet. The instant both peers sync, one edit
+  wins outright and the other is gone — not merged, not flagged, not
+  recoverable from this crate's data model, because the losing bytes were
+  never kept anywhere. For a "Google doc without Google" pitched as this
+  namespace model's flagship freeform use, that's a real, silent
+  data-loss bug waiting to happen the first time two org members
+  actually go offline at the same time, not a hypothetical edge case.
+
+**Mitigation shipped the same day, not deferred.**
+`namespace::save_document_revision`/`list_document_revisions`/
+`load_document` replace "one shared mutable key" with "an
+append-only stream of immutable revisions under `{doc_id}/rev/`," each
+write keyed by its own `new_entry_key()` — the same trick `submit_text`
+already used for inbox collisions, applied here to the doc-editing case
+instead. Two offline authors editing the same `doc_id` now produce two
+revisions that both survive sync; nothing is ever silently destroyed.
+`load_document` still has to pick *something* to show as "current" (the
+latest key), which is a UX default, not a claim that the later write is
+semantically the right one to keep — a real merge UI (show both, let a
+human reconcile) is future work, but "both edits exist and are visible"
+is the load-bearing property this fixes, and it's true now.
+`namespace::put_text` itself is untouched and still last-write-wins on
+purpose — it's the right choice for content that's genuinely
+single-writer or where "latest wins" is the actual desired semantics (a
+status line, a self-authored note), and forcing revision history onto
+every freeform write would be the wrong default for that case. Proven
+live in `crates/atproto-iroh-core/tests/document_revisions.rs`: two real
+nodes, both write a revision of the same `doc_id` before either has
+synced with the other, then both sides are read back and shown to have
+both revisions, not just whichever synced last.
+
 ## 6. Open questions, ranked by "blocks anything getting built"
 
 1. **Partially answered, first-person, and it's what drove item 4's

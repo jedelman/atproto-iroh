@@ -18,6 +18,7 @@ resolver = "2"
 members = [
     "crates/atproto-iroh-core",
     "crates/atproto-iroh-tauri/src-tauri",
+    "crates/atproto-iroh-cli",
 ]
 
 [workspace.package]

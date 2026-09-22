@@ -148,6 +148,16 @@ a real client would need them:
   desktop. Worth verifying before building, not assuming.
 - **Any error/loading state beyond `textContent = "error: ..."`.** Fine
   for proving the wiring, not fine for anyone else to use.
+- **The "Shared doc" UI still calls `write_text`/`read_text`
+  (`namespace::put_text`/`get_text`), not the new
+  `save_document_revision`/`load_document` pair.** `put_text` is
+  confirmed last-write-wins on a fixed key (SPEC.md's 2026-09-22 CRDT
+  finding, right before §6) — two people editing the same doc while both
+  offline will have one edit silently discarded on reconnect. The core
+  fix (`namespace.rs`, proven live in
+  `crates/atproto-iroh-core/tests/document_revisions.rs`) exists; this
+  UI hasn't been switched over to it yet, so treat "Shared doc" here as
+  the known-lossy primitive until that happens, not as already fixed.
 
 ## Building
 
