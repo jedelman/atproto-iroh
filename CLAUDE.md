@@ -90,9 +90,30 @@ public inbox), safe against forgery by construction
 the write ticket granting access is deliberately posted somewhere public.
 `cargo build -p atproto-iroh-tauri` verified clean, not just written —
 see its own `README.md` for exactly what that check did and didn't
-cover, and for everything real still missing (governance UI, persistence,
-mute UI, QR scanning) before this is a usable app rather than a proof
-the layers connect.
+cover, and for everything real still missing (a real founding-record
+mechanism, persistence, mute UI, QR scanning) before this is a usable
+app rather than a proof the layers connect. Governance is wired now too
+(`list_proposals`/`governance_state`/`create_proposal`/`create_signal`)
+— see the README's note on what it's still resting on a placeholder for.
+
+**Extension model, decided: PRs to this repo, not a plugin system.**
+Building governance's UI surfaced a real question — should new content
+types (a calendar, a photo board, a chat) be lexicon-based plugins
+inside this one app, or should this stay a shared library other apps
+depend on separately? Jason's answer, and the plan going in: this repo
+is MIT-licensed specifically so people extend it by contributing code
+back, not by loading third-party plugins into a runtime extension point.
+Concretely: `atproto-iroh-tauri` stays a thin reference shell (identity,
+namespace/share/join, the generic inspector, freeform text as the
+fallback for anything without dedicated UI); a genuinely different app
+either grows inside this repo via a real PR (a new content type gets a
+real Rust module and its own UI section, same shape governance just got,
+not a dynamically-loaded schema) or lives as its own separate crate/app
+depending on `atproto-iroh-core` directly. No formal plugin
+architecture — don't build one speculatively; if a shared-UI-toolkit
+seam becomes obvious once a few such PRs or separate apps actually
+exist, extract it then, from evidence, the same way this repo's own
+crate boundaries got decided.
 
 ## Lexicons
 
