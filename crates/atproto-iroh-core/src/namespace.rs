@@ -184,3 +184,78 @@ async fn read_entry<R: Record>(node: &Node, entry: &Entry) -> Result<R> {
     let bytes = node.blob_store().get_bytes(entry.content_hash()).await?;
     Ok(serde_json::from_slice(&bytes)?)
 }
+
+/// One synced entry, read generically — no `Record` type parameter, no
+/// knowledge of what collection it belongs to. This is the whole trick
+/// behind a "naive reflective" inspector: Rust has no runtime reflection,
+/// but every record here happens to be JSON, so "try to parse the bytes,
+/// fall back to hex" gets the same practical result — one view that
+/// covers `NodeProfile`, `Proposal`, anything added later, with no new
+/// per-type UI code ever needed. An inspector, not a claim that this
+/// *is* reflection.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RawEntry {
+    /// Hex-encoded, matching `governance.rs`'s convention elsewhere in
+    /// this crate — readable in a generic inspector, where `AuthorId`'s
+    /// own derived `Serialize` (a bare `[u8; 32]`) wouldn't be.
+    pub author_hex: String,
+    /// Full key, `{collection}/{rkey}` — unlike `list_records`, this
+    /// function doesn't know the collection ahead of time to strip it.
+    pub key: String,
+    /// Microseconds since the Unix epoch — `iroh_docs::sync::Record`'s
+    /// own unit, passed through rather than converted, since an
+    /// inspector should show what's actually stored, not a
+    /// reinterpretation of it.
+    pub timestamp_micros: u64,
+    pub content_len: u64,
+    pub content: EntryContent,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum EntryContent {
+    /// Parsed successfully — every record type this crate writes lands
+    /// here, since they're all JSON.
+    Json(serde_json::Value),
+    /// Didn't parse as JSON (or the blob hadn't finished downloading —
+    /// see `get_record`'s note on content lagging metadata; a `Raw`
+    /// entry the caller expected to be JSON is worth a retry, not
+    /// necessarily proof of a non-JSON record).
+    Raw { hex: String },
+}
+
+/// Every entry currently in `doc`, across every collection and author —
+/// the raw material for a generic state inspector. Deliberately returns
+/// `Vec<RawEntry>` rather than anything collection-specific; building a
+/// UI that groups/filters/labels these is real UX work this function
+/// doesn't do on the caller's behalf.
+pub async fn dump_all(node: &Node, doc: &Doc) -> Result<Vec<RawEntry>> {
+    let stream = doc.get_many(Query::all()).await?;
+    tokio::pin!(stream);
+    let mut out = Vec::new();
+    while let Some(entry) = stream.next().await {
+        let entry = entry?;
+        let key = String::from_utf8_lossy(entry.key()).into_owned();
+        let content = match node.blob_store().get_bytes(entry.content_hash()).await {
+            Ok(bytes) => match serde_json::from_slice(&bytes) {
+                Ok(value) => EntryContent::Json(value),
+                Err(_) => EntryContent::Raw {
+                    hex: hex::encode(&bytes),
+                },
+            },
+            // Content blob still downloading (see read_entry's note) or
+            // genuinely unavailable — either way, nothing to show yet.
+            Err(_) => EntryContent::Raw {
+                hex: String::new(),
+            },
+        };
+        out.push(RawEntry {
+            author_hex: hex::encode(entry.author().as_bytes()),
+            key,
+            timestamp_micros: entry.timestamp(),
+            content_len: entry.content_len(),
+            content,
+        });
+    }
+    Ok(out)
+}

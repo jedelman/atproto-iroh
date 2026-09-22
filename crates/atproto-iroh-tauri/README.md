@@ -9,17 +9,40 @@ this is a UI on top of.
 - `src-tauri/` is a genuine Tauri 2 app: `atproto-iroh-core` is a normal
   path dependency, no IPC or FFI boundary between UI-adjacent code and
   protocol logic.
-- Six commands, each a direct call into the core crate: `spawn_node`
+- Eight commands, each a direct call into the core crate: `spawn_node`
   (generates a `did:iroh` identity and starts a real `iroh` node —
   deliberately not done at app launch; see `main.rs`'s comment on why),
   `node_did`, `create_namespace_with_profile` (creates a namespace and
   publishes a `NodeProfile` into it), `list_namespaces`, `share_namespace`
-  (`Node::share`, unwrapped to a plain paste-able ticket string), and
+  (`Node::share`, unwrapped to a plain paste-able ticket string),
   `join_namespace` (`Node::join`, which SPEC.md §6 item 10 confirmed
-  backfills full history, not just future writes — a real join).
-  `AppState.docs` holds every namespace this node currently has open, so
-  a later command can name one by id without re-deriving it from a
-  ticket each time.
+  backfills full history, not just future writes — a real join),
+  `dump_namespace` (the inspector, below), and `ticket_to_qr` (an SVG QR
+  code of a ticket string, nothing more). `AppState.docs` holds every
+  namespace this node currently has open, so a later command can name
+  one by id without re-deriving it from a ticket each time.
+- **The inspector** (`namespace::dump_all`, `dist`'s "Inspector"
+  section): every raw entry currently synced into a namespace — author,
+  key, timestamp, content — with no per-record-type code anywhere in the
+  chain. Rust has no runtime reflection, so this isn't literally
+  automatic over arbitrary types, but every record this crate writes is
+  JSON, so "try to parse the bytes, fall back to hex" gets the same
+  practical result: one generic view that already covers `NodeProfile`
+  and governance `Proposal`/`Signal` records without having been told
+  about either, and covers whatever gets added next the same way. A
+  debugging view for building against, not a feature end users need.
+- **QR codes** (`ticket_to_qr`): renders a ticket as an SVG QR, nothing
+  else — no scanning/camera decode built (see below), no native OS share
+  sheet integration (unverified whether Tauri 2 has one; not checked).
+  **A Write ticket is a shared secret with no per-holder revocation**
+  (SPEC.md §6 item 12) — the share form defaults to Read-only and says
+  so plainly; QR generation itself has no guardrail against turning a
+  Write ticket into a code, because the safety judgment belongs with
+  whoever's about to post it somewhere, not silently enforced by this
+  function. Genuinely relevant to SPEC.md §3.6's discovery story: a
+  QR code physically posted somewhere is the same trust shape as a
+  ticket shared in a DM — nothing discoverable until someone already has
+  the capability — just analog instead of digital.
 - `dist/` is plain HTML/CSS/JS — no bundler, no `node_modules`, no
   framework. `tauri.conf.json` sets `withGlobalTauri: true` so
   `window.__TAURI__` is injected directly; `main.js` calls `invoke()`
@@ -43,6 +66,13 @@ a real client would need them:
   should probably follow the same one).
 - **Mute UI.** `mute::MuteList` exists and is tested; nothing here reads
   or writes it.
+- **QR scanning.** Generation only. Decoding would need webview camera
+  access (`getUserMedia` + a JS decoder, e.g. `jsQR`) — plausible on
+  desktop since Tauri's webview is a real browser engine, but camera
+  permission behavior across WebKit/WebView2/webkit2gtk specifically
+  wasn't checked in this session, and Tauri 2's mobile story (where a
+  camera matters most) is already flagged elsewhere as less mature than
+  desktop. Worth verifying before building, not assuming.
 - **Any error/loading state beyond `textContent = "error: ..."`.** Fine
   for proving the wiring, not fine for anyone else to use.
 

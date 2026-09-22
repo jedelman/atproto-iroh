@@ -62,6 +62,7 @@ document
   .addEventListener("click", refreshNamespaces);
 
 const ticketOutEl = document.getElementById("ticket-out");
+const qrOutEl = document.getElementById("qr-out");
 
 document
   .getElementById("share-namespace")
@@ -70,6 +71,7 @@ document
     const namespaceId = document.getElementById("share-namespace-id").value;
     const mode = document.getElementById("share-mode").value;
     ticketOutEl.value = "creating ticket…";
+    qrOutEl.innerHTML = "";
     try {
       ticketOutEl.value = await invoke("share_namespace", {
         namespaceId,
@@ -79,6 +81,25 @@ document
       ticketOutEl.value = `error: ${err}`;
     }
   });
+
+// QR is generated on demand, not automatically on every ticket — a
+// deliberate extra step before turning a capability into something
+// physically postable (see index.html's hint on Write tickets).
+document.getElementById("show-qr").addEventListener("click", async () => {
+  const ticket = ticketOutEl.value;
+  if (!ticket || ticket.startsWith("error") || ticket.endsWith("…")) {
+    qrOutEl.textContent = "create a ticket first";
+    return;
+  }
+  qrOutEl.textContent = "rendering…";
+  try {
+    // ticket_to_qr returns raw SVG markup; safe to inject directly since
+    // it's this app's own Rust code generating it, not untrusted input.
+    qrOutEl.innerHTML = await invoke("ticket_to_qr", { ticket });
+  } catch (err) {
+    qrOutEl.textContent = `error: ${err}`;
+  }
+});
 
 const joinedEl = document.getElementById("joined");
 
@@ -96,3 +117,84 @@ document
       joinedEl.textContent = `error: ${err}`;
     }
   });
+
+// --- Inspector -------------------------------------------------------
+// Naive on purpose: no per-record-type rendering, just a generic
+// recursive view over whatever dump_namespace hands back. Adding a new
+// record type anywhere in atproto-iroh-core needs zero changes here.
+
+const inspectorOutEl = document.getElementById("inspector-out");
+
+document
+  .getElementById("inspect-namespace")
+  .addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const namespaceId = document.getElementById("inspect-namespace-id").value;
+    inspectorOutEl.textContent = "reading…";
+    try {
+      const entries = await invoke("dump_namespace", { namespaceId });
+      renderEntries(entries);
+    } catch (err) {
+      inspectorOutEl.textContent = `error: ${err}`;
+    }
+  });
+
+function renderEntries(entries) {
+  inspectorOutEl.innerHTML = "";
+  if (entries.length === 0) {
+    inspectorOutEl.textContent = "(no entries synced yet)";
+    return;
+  }
+  for (const entry of entries) {
+    const details = document.createElement("details");
+    details.open = true;
+
+    const summary = document.createElement("summary");
+    summary.className = "value";
+    const when = new Date(entry.timestamp_micros / 1000).toLocaleString();
+    summary.textContent = `${entry.key}  —  ${entry.author_hex.slice(0, 12)}…  —  ${when}`;
+    details.appendChild(summary);
+
+    details.appendChild(renderValue(entry.content));
+    inspectorOutEl.appendChild(details);
+  }
+}
+
+// Generic recursive renderer for whatever dump_namespace's `content`
+// field contains: `{kind: "json", value: <anything>}` or
+// `{kind: "raw", value: {hex: "..."}}`. Walks arbitrary JSON structure —
+// this is the part that makes it "reflective": it never assumes a
+// shape, so it never needs updating when a new record type shows up.
+function renderValue(node) {
+  if (node && node.kind === "raw") {
+    const pre = document.createElement("pre");
+    pre.className = "value";
+    pre.textContent = node.value.hex
+      ? `(raw, not JSON) ${node.value.hex}`
+      : "(content not synced yet)";
+    return pre;
+  }
+  return renderJson(node.value);
+}
+
+function renderJson(value) {
+  if (value === null || typeof value !== "object") {
+    const span = document.createElement("span");
+    span.className = "value";
+    span.textContent = JSON.stringify(value);
+    return span;
+  }
+  const list = document.createElement("ul");
+  const entries = Array.isArray(value)
+    ? value.map((v, i) => [i, v])
+    : Object.entries(value);
+  for (const [key, v] of entries) {
+    const li = document.createElement("li");
+    const label = document.createElement("strong");
+    label.textContent = `${key}: `;
+    li.appendChild(label);
+    li.appendChild(renderJson(v));
+    list.appendChild(li);
+  }
+  return list;
+}

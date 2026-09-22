@@ -61,8 +61,8 @@
           <label>
             Access
             <select id="share-mode">
+              <option value="Read" selected>Read only</option>
               <option value="Write">Write (full member)</option>
-              <option value="Read">Read only</option>
             </select>
           </label>
           <button type="submit">Create ticket</button>
@@ -71,9 +71,16 @@
           A ticket is a capability, not a link to a server — see
           SPEC.md §3.4/§3.6. Anyone holding it can sync this namespace
           directly with this node; there's nothing else granting or
-          revoking it.
+          revoking it. <strong>A Write ticket is a shared secret with no
+          per-holder revocation</strong> — anyone who ever sees it, sees
+          it forever (SPEC.md §6 item 12). Read-only defaults to selected
+          on purpose: only pick Write for someone you're handing this to
+          directly, never for anything you're about to post, print, or
+          paste somewhere public.
         </p>
         <textarea id="ticket-out" class="value" readonly rows="3"></textarea>
+        <button id="show-qr" type="button">Show as QR</button>
+        <div id="qr-out"></div>
       </section>
 
       <section>
@@ -86,6 +93,25 @@
           <button type="submit">Join</button>
         </form>
         <p id="joined" class="value">—</p>
+      </section>
+
+      <section>
+        <h2>Inspector</h2>
+        <p class="hint">
+          Every raw entry currently synced into a namespace — no
+          per-record-type code, generic across whatever's in there
+          (<code>NodeProfile</code>, a governance <code>Proposal</code>,
+          anything added later). A debugging view, not a feature; see
+          <code>dump_all</code> in <code>namespace.rs</code>.
+        </p>
+        <form id="inspect-namespace">
+          <label>
+            Namespace id
+            <input id="inspect-namespace-id" type="text" required />
+          </label>
+          <button type="submit">Inspect</button>
+        </form>
+        <div id="inspector-out"></div>
       </section>
     </main>
     <script type="module" src="main.js"></script>

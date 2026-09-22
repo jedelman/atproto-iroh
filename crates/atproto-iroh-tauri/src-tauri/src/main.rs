@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use atproto_iroh_core::{
     identity::Identity,
-    namespace::{put_record, Node},
+    namespace::{dump_all, put_record, Node, RawEntry},
     records::{NodeCategory, NodeProfile},
 };
 use iroh_docs::{api::protocol::ShareMode, api::Doc, DocTicket};
@@ -137,6 +137,46 @@ async fn join_namespace(state: State<'_, AppState>, ticket: String) -> Result<St
     Ok(namespace_id)
 }
 
+/// Naive reflective inspector, per the request that started this: every
+/// entry currently in a namespace, raw — no per-record-type command, no
+/// per-record-type frontend code. `namespace::dump_all` already does the
+/// actual work (try each entry's bytes as JSON, fall back to hex); this
+/// is just the Tauri boundary around it.
+#[tauri::command]
+async fn dump_namespace(
+    state: State<'_, AppState>,
+    namespace_id: String,
+) -> Result<Vec<RawEntry>, String> {
+    let node = state.node.lock().await;
+    let node = node.as_ref().ok_or("call spawn_node first")?;
+
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+
+    dump_all(node, doc).await.map_err(|e| e.to_string())
+}
+
+/// Renders a ticket string as an SVG QR code — nothing more than that;
+/// callers decide the access mode before calling `share_namespace`, this
+/// only pictures whatever ticket it's handed. **Deliberately no
+/// enforcement here that a `Write` ticket can't be turned into a QR** —
+/// the safety judgment (read-only for anything posted somewhere public,
+/// since a photographed ticket is a bearer secret with no per-holder
+/// revocation — SPEC.md §6 item 12) belongs in the UI/human decision of
+/// what to render a code for, not silently guessed at in this function.
+#[tauri::command]
+fn ticket_to_qr(ticket: String) -> Result<String, String> {
+    let code = qrcode::QrCode::new(ticket.as_bytes()).map_err(|e| e.to_string())?;
+    Ok(code
+        .render()
+        .min_dimensions(256, 256)
+        .dark_color(qrcode::render::svg::Color("#000000"))
+        .light_color(qrcode::render::svg::Color("#ffffff"))
+        .build())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(AppState::default())
@@ -147,6 +187,8 @@ fn main() {
             list_namespaces,
             share_namespace,
             join_namespace,
+            dump_namespace,
+            ticket_to_qr,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
