@@ -178,6 +178,18 @@ pub async fn submit_text(
     Ok(key)
 }
 
+/// Parses a hex-encoded `AuthorId` — the inverse of the
+/// `hex::encode(author.as_bytes())` convention used throughout this
+/// crate (`governance.rs`'s `subject_ref`, `Proposal.subject_member`) and
+/// by any UI that has to accept one as user input. `None` rather than an
+/// error on anything malformed — callers decide whether that's worth
+/// surfacing.
+pub fn decode_author_hex(hex_str: &str) -> Option<AuthorId> {
+    let bytes = hex::decode(hex_str).ok()?;
+    let array: [u8; 32] = bytes.try_into().ok()?;
+    Some(AuthorId::from(&array))
+}
+
 /// A sortable, timestamp-derived key. **Not** a real atproto TID (that's
 /// a specific base32-sortable, clock-and-counter scheme this doesn't
 /// implement) — good enough for uniqueness and creation-order sorting

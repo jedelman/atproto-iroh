@@ -21,7 +21,7 @@ use iroh_docs::{api::Doc, AuthorId};
 use crate::governance::{
     self, subject_ref, GovernanceClass, PolicyValue, Proposal, Ratification, Signal,
 };
-use crate::namespace::{list_records, new_entry_key, put_record, Node};
+use crate::namespace::{decode_author_hex, list_records, new_entry_key, put_record, Node};
 
 #[derive(Debug, Clone)]
 pub struct GovernanceState {
@@ -138,10 +138,7 @@ fn apply(state: &mut GovernanceState, proposal: &Proposal) {
 }
 
 fn decode_subject_member(proposal: &Proposal) -> Option<AuthorId> {
-    let hex_str = proposal.subject_member.as_deref()?;
-    let bytes = hex::decode(hex_str).ok()?;
-    let array: [u8; 32] = bytes.try_into().ok()?;
-    Some(AuthorId::from(&array))
+    decode_author_hex(proposal.subject_member.as_deref()?)
 }
 
 /// Posts a new `Proposal` under `author`, generating its `rkey`. Returns

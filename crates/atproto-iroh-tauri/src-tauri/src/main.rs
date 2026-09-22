@@ -9,11 +9,16 @@
 
 use std::collections::HashMap;
 
+use std::collections::HashSet;
+
 use atproto_iroh_core::{
+    fold::{self, GovernanceState},
+    governance::{GovernanceClass, PolicyChange, PolicyValue, Proposal, Ratification, Signal, SignalType},
     identity::Identity,
-    namespace::{dump_all, get_text, put_record, put_text, submit_text, Node, RawEntry},
+    namespace::{decode_author_hex, dump_all, get_text, list_records, put_record, put_text, submit_text, Node, RawEntry},
     records::{NodeCategory, NodeProfile},
 };
+use chrono::Duration as ChronoDuration;
 use iroh_docs::{api::protocol::ShareMode, api::Doc, AuthorId, DocTicket};
 use tauri::State;
 use tokio::sync::Mutex;
@@ -262,6 +267,232 @@ async fn submit_to_inbox(
         .map_err(|e| e.to_string())
 }
 
+/// Placeholder starting policy until SPEC.md §6 item 12's still-open gap
+/// (no `founding` record type — `fold::fold`'s own doc comment names
+/// this) gets a real answer. **Not a protocol default** — SPEC.md §3.7.2
+/// is explicit that these numbers are namespace-owned, group-set state,
+/// never something this document (or this app) gets to fix. Short
+/// windows on purpose, for a reference client someone's actively poking
+/// at, not because a real namespace should use them.
+fn placeholder_founding_policy() -> HashMap<GovernanceClass, PolicyValue> {
+    [
+        (
+            GovernanceClass::AdmitCoSigner,
+            PolicyValue { window_seconds: 3600, block_threshold: 1 },
+        ),
+        (
+            GovernanceClass::RemoveCoSigner,
+            PolicyValue { window_seconds: 3600, block_threshold: 1 },
+        ),
+        (
+            GovernanceClass::ChangePolicy,
+            PolicyValue { window_seconds: 3600, block_threshold: 1 },
+        ),
+    ]
+    .into_iter()
+    .collect()
+}
+
+/// Same gap, same honesty: with no `founding` record naming who a
+/// namespace's founder(s) were, this heuristic treats every author who's
+/// ever self-asserted `governance_eligible: true` in their own
+/// `NodeProfile` as founding-eligible. `profile.json`'s own lexicon
+/// already says that field "is not authoritative" for exactly this
+/// reason — a compromised or just-optimistic client could set it. Fine
+/// for a reference client proving the wiring; not fine as the actual
+/// membership check a real deployment should trust.
+async fn bootstrap_founding_eligible(node: &Node, doc: &Doc) -> Result<HashSet<AuthorId>, String> {
+    let profiles = list_records::<NodeProfile>(node, doc)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(profiles
+        .into_iter()
+        .filter(|(_, _, profile)| profile.governance_eligible == Some(true))
+        .map(|(author, _, _)| author)
+        .collect())
+}
+
+#[derive(serde::Serialize)]
+struct ProposalView {
+    author_hex: String,
+    rkey: String,
+    proposal: Proposal,
+    status: RatificationView,
+}
+
+#[derive(serde::Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+enum RatificationView {
+    Open { blockers: Vec<String> },
+    Ratified,
+    Blocked { blockers: Vec<String> },
+}
+
+impl From<Ratification<AuthorId>> for RatificationView {
+    fn from(r: Ratification<AuthorId>) -> Self {
+        let hex_all = |blockers: Vec<AuthorId>| {
+            blockers.iter().map(|a| hex::encode(a.as_bytes())).collect()
+        };
+        match r {
+            Ratification::Open { blockers } => RatificationView::Open { blockers: hex_all(blockers) },
+            Ratification::Ratified => RatificationView::Ratified,
+            Ratification::Blocked { blockers } => RatificationView::Blocked { blockers: hex_all(blockers) },
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct GovernanceStateView {
+    eligible_hex: Vec<String>,
+}
+
+impl From<GovernanceState> for GovernanceStateView {
+    fn from(s: GovernanceState) -> Self {
+        GovernanceStateView {
+            eligible_hex: s.eligible.iter().map(|a| hex::encode(a.as_bytes())).collect(),
+        }
+    }
+}
+
+/// Every `Proposal` in a namespace, each with its live ratification
+/// status — `fold::fold` unwrapped for the UI. Re-runs the whole fold on
+/// every call (O(every record in the namespace)); fine at reference-app
+/// scale, a real cache/incremental-fold question once a namespace has
+/// more than a handful of proposals.
+#[tauri::command]
+async fn list_proposals(
+    state: State<'_, AppState>,
+    namespace_id: String,
+) -> Result<Vec<ProposalView>, String> {
+    let node = state.node.lock().await;
+    let node = node.as_ref().ok_or("call spawn_node first")?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+
+    let founding_eligible = bootstrap_founding_eligible(node, doc).await?;
+    let (_, outcomes) = fold::fold(
+        node,
+        doc,
+        founding_eligible,
+        placeholder_founding_policy(),
+        chrono::Utc::now(),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(outcomes
+        .into_iter()
+        .map(|o| ProposalView {
+            author_hex: hex::encode(o.author.as_bytes()),
+            rkey: o.rkey,
+            proposal: o.proposal,
+            status: o.ratification.into(),
+        })
+        .collect())
+}
+
+/// Current governance state — who's eligible, per `bootstrap_founding_eligible`
+/// plus every ratified admit/remove since. Separate command from
+/// `list_proposals` because a caller often wants one without the other
+/// (e.g. populating a "who can I address a removeCoSigner proposal at"
+/// list without re-rendering every proposal).
+#[tauri::command]
+async fn governance_state(
+    state: State<'_, AppState>,
+    namespace_id: String,
+) -> Result<GovernanceStateView, String> {
+    let node = state.node.lock().await;
+    let node = node.as_ref().ok_or("call spawn_node first")?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+
+    let founding_eligible = bootstrap_founding_eligible(node, doc).await?;
+    let (governance_state, _) = fold::fold(
+        node,
+        doc,
+        founding_eligible,
+        placeholder_founding_policy(),
+        chrono::Utc::now(),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(governance_state.into())
+}
+
+/// Posts a new `Proposal` — `fold::propose` unwrapped for the UI.
+/// `deadline_hours` is the only timing control exposed here rather than
+/// a raw deadline, since "how far in the future" is what a person
+/// actually thinks in, not an absolute timestamp.
+#[tauri::command]
+async fn create_proposal(
+    state: State<'_, AppState>,
+    namespace_id: String,
+    title: String,
+    description: Option<String>,
+    class: GovernanceClass,
+    deadline_hours: i64,
+    subject_member_hex: Option<String>,
+    policy_change: Option<PolicyChange>,
+) -> Result<String, String> {
+    let author = ensure_author(&state).await?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+
+    let now = chrono::Utc::now();
+    let proposal = Proposal {
+        title,
+        description,
+        class,
+        block_threshold: None,
+        deadline: now + ChronoDuration::hours(deadline_hours),
+        policy_change,
+        subject_member: subject_member_hex,
+        created_at: now,
+    };
+    fold::propose(doc, author, &proposal)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Posts a `Signal` responding to a `Proposal` — `fold::signal` unwrapped
+/// for the UI. Needs the target proposal's author (not just its `rkey`)
+/// because `RecordIdentifier` is `(namespace, author, key)` — SPEC.md
+/// §3.4 — so `rkey` alone doesn't uniquely name a record.
+#[tauri::command]
+async fn create_signal(
+    state: State<'_, AppState>,
+    namespace_id: String,
+    proposal_author_hex: String,
+    proposal_rkey: String,
+    signal_type: SignalType,
+    text: Option<String>,
+) -> Result<String, String> {
+    let author = ensure_author(&state).await?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    let proposal_author =
+        decode_author_hex(&proposal_author_hex).ok_or("invalid proposal author id")?;
+
+    let sig = Signal {
+        subject: String::new(), // overwritten by fold::signal
+        signal_type,
+        text,
+        created_at: chrono::Utc::now(),
+    };
+    fold::signal(doc, author, proposal_author, &proposal_rkey, sig)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(AppState::default())
@@ -277,6 +508,10 @@ fn main() {
             write_text,
             read_text,
             submit_to_inbox,
+            list_proposals,
+            governance_state,
+            create_proposal,
+            create_signal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -171,6 +171,140 @@ document
     }
   });
 
+// --- Governance --------------------------------------------------------
+
+const govEligibleEl = document.getElementById("gov-eligible");
+const proposalsOutEl = document.getElementById("proposals-out");
+
+async function loadGovernance(namespaceId) {
+  proposalsOutEl.textContent = "loading…";
+  try {
+    const [state, proposals] = await Promise.all([
+      invoke("governance_state", { namespaceId }),
+      invoke("list_proposals", { namespaceId }),
+    ]);
+    govEligibleEl.textContent =
+      state.eligible_hex.length === 0
+        ? "(no governance-eligible members found — see the hint above)"
+        : `eligible: ${state.eligible_hex.map((h) => h.slice(0, 12) + "…").join(", ")}`;
+    renderProposals(namespaceId, proposals);
+  } catch (err) {
+    proposalsOutEl.textContent = `error: ${err}`;
+  }
+}
+
+document
+  .getElementById("load-governance")
+  .addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await loadGovernance(document.getElementById("gov-namespace-id").value);
+  });
+
+const SIGNAL_TYPES = ["consent", "stand_aside", "block", "abstain", "exit"];
+
+function renderProposals(namespaceId, proposals) {
+  proposalsOutEl.innerHTML = "";
+  if (proposals.length === 0) {
+    proposalsOutEl.textContent = "(no proposals yet)";
+    return;
+  }
+  for (const p of proposals) {
+    const details = document.createElement("details");
+    details.open = true;
+
+    const summary = document.createElement("summary");
+    summary.className = "value";
+    const statusLabel =
+      p.status.state === "open"
+        ? `open, ${p.status.blockers.length} block(s) so far`
+        : p.status.state === "ratified"
+        ? "ratified"
+        : `blocked (${p.status.blockers.length})`;
+    summary.textContent = `[${p.proposal.class}] ${p.proposal.title} — ${statusLabel}`;
+    details.appendChild(summary);
+
+    details.appendChild(renderJson(p.proposal));
+
+    const form = document.createElement("form");
+    form.className = "signal-form";
+    const select = document.createElement("select");
+    for (const t of SIGNAL_TYPES) {
+      const option = document.createElement("option");
+      option.value = t;
+      option.textContent = t;
+      select.appendChild(option);
+    }
+    const text = document.createElement("input");
+    text.type = "text";
+    text.placeholder = "optional note";
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.textContent = "Signal";
+    form.append(select, text, submit);
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      submit.disabled = true;
+      try {
+        await invoke("create_signal", {
+          namespaceId,
+          proposalAuthorHex: p.author_hex,
+          proposalRkey: p.rkey,
+          signalType: select.value,
+          text: text.value || null,
+        });
+        await loadGovernance(namespaceId);
+      } catch (err) {
+        alert(`error signaling: ${err}`);
+        submit.disabled = false;
+      }
+    });
+    details.appendChild(form);
+
+    proposalsOutEl.appendChild(details);
+  }
+}
+
+document
+  .getElementById("create-proposal")
+  .addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const statusEl = document.getElementById("proposal-status");
+    const namespaceId = document.getElementById("gov-namespace-id").value;
+    if (!namespaceId) {
+      statusEl.textContent = "load a namespace id above first";
+      return;
+    }
+    const policyChangeRaw = document
+      .getElementById("proposal-policy-change")
+      .value.trim();
+    let policyChange = null;
+    if (policyChangeRaw) {
+      try {
+        policyChange = JSON.parse(policyChangeRaw);
+      } catch (err) {
+        statusEl.textContent = `invalid policy change JSON: ${err}`;
+        return;
+      }
+    }
+    statusEl.textContent = "posting…";
+    try {
+      await invoke("create_proposal", {
+        namespaceId,
+        title: document.getElementById("proposal-title").value,
+        description: document.getElementById("proposal-description").value || null,
+        class: document.getElementById("proposal-class").value,
+        deadlineHours: Number(document.getElementById("proposal-deadline-hours").value),
+        subjectMemberHex: document.getElementById("proposal-subject-member").value || null,
+        policyChange,
+      });
+      statusEl.textContent = "posted";
+      await loadGovernance(namespaceId);
+    } catch (err) {
+      statusEl.textContent = `error: ${err}`;
+    }
+  });
+
 // --- Inspector -------------------------------------------------------
 // Naive on purpose: no per-record-type rendering, just a generic
 // recursive view over whatever dump_namespace hands back. Adding a new

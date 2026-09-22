@@ -154,6 +154,66 @@
       </section>
 
       <section>
+        <h2>Governance</h2>
+        <p class="hint">
+          Objection-window ratification (SPEC.md §3.7.2/§3.9): a
+          Proposal ratifies by default once its deadline passes unless
+          enough <code>block</code> Signals land first. <code>consent</code>
+          is recorded but carries no mechanical power. Eligibility and
+          policy here are computed with a placeholder starting policy and
+          a heuristic "who's self-asserted governance-eligible" founder
+          set — see <code>list_proposals</code>'s doc comment in
+          <code>main.rs</code>; a real founding-record mechanism doesn't
+          exist yet (SPEC.md §6 item 12).
+        </p>
+        <form id="load-governance">
+          <label>
+            Namespace id
+            <input id="gov-namespace-id" type="text" required />
+          </label>
+          <button type="submit">Load proposals</button>
+        </form>
+        <p id="gov-eligible" class="value">—</p>
+        <div id="proposals-out"></div>
+
+        <h3>New proposal</h3>
+        <form id="create-proposal">
+          <label>
+            Title
+            <input id="proposal-title" type="text" required />
+          </label>
+          <label>
+            Description
+            <textarea id="proposal-description" rows="2"></textarea>
+          </label>
+          <label>
+            Class
+            <select id="proposal-class">
+              <option value="general">General</option>
+              <option value="admitCoSigner">Admit co-signer</option>
+              <option value="removeCoSigner">Remove co-signer</option>
+              <option value="changePolicy">Change policy</option>
+            </select>
+          </label>
+          <label>
+            Deadline (hours from now)
+            <input id="proposal-deadline-hours" type="number" value="24" min="1" required />
+          </label>
+          <label>
+            Subject member (hex author id — admit/remove only)
+            <input id="proposal-subject-member" type="text" />
+          </label>
+          <label>
+            Policy change (JSON — changePolicy only; e.g.
+            <code>{"admitCoSigner":{"windowSeconds":3600,"blockThreshold":1}}</code>)
+            <textarea id="proposal-policy-change" rows="2"></textarea>
+          </label>
+          <button type="submit">Post proposal</button>
+        </form>
+        <p id="proposal-status" class="value">—</p>
+      </section>
+
+      <section>
         <h2>Inspector</h2>
         <p class="hint">
           Every raw entry currently synced into a namespace — no

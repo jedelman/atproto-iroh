@@ -65,6 +65,24 @@ this is a UI on top of.
   code physically posted somewhere is the same trust shape as a ticket
   shared in a DM — nothing discoverable until someone already has the
   capability — just analog instead of digital.
+- **Governance** (`fold::fold`/`propose`/`signal`, `dist`'s "Governance"
+  section): `list_proposals` re-runs the whole fold on every call and
+  returns each `Proposal` with its live `Ratification` status;
+  `create_proposal`/`create_signal` post new records. Real, but built on
+  top of a gap that's still open, not silently papered over:
+  SPEC.md §6 item 12 already named the missing piece (no `founding`
+  record type naming a namespace's actual founder or its starting
+  policy), so this UI supplies a placeholder starting policy
+  (`placeholder_founding_policy`, explicitly documented as not a
+  protocol default) and a heuristic eligible-member set (anyone who's
+  self-asserted `governance_eligible: true` in their own `NodeProfile` —
+  which that lexicon's own field description already calls
+  non-authoritative). Fine for proving the ratification math works
+  against real sync; not fine as the actual membership check a real
+  deployment should trust. `list_proposals`/`governance_state` are also
+  O(every record in the namespace) per call — a caching or incremental-
+  fold question once a namespace has more than a handful of proposals,
+  not addressed here.
 - `dist/` is plain HTML/CSS/JS — no bundler, no `node_modules`, no
   framework. `tauri.conf.json` sets `withGlobalTauri: true` so
   `window.__TAURI__` is injected directly; `main.js` calls `invoke()`
@@ -76,11 +94,11 @@ this is a UI on top of.
 This proves the wiring, not a usable app. Missing, in roughly the order
 a real client would need them:
 
-- **Governance.** `fold.rs`/`propose`/`signal` aren't called from any
-  command yet — no way to see a namespace's `Proposal`s, post one, or
-  signal on one from the UI. The most obviously missing piece now that
-  sharing/joining is wired up — two people can be in the same namespace
-  but have no way to actually govern it from this client.
+- **A real founding-record mechanism.** Governance is wired now, but
+  resting on the placeholder/heuristic bootstrap described above — the
+  most consequential remaining gap, since it's load-bearing for whether
+  the ratification math means anything in a real deployment, not just a
+  reference client.
 - **Persistence.** `Node::spawn` uses `Docs::memory()` — nothing survives
   a restart. Needs `Docs::persistent` plus somewhere sensible to put the
   data directory (see `mute.rs`'s `default_path` for the XDG-ish
