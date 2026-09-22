@@ -197,6 +197,85 @@ software side (a CLI that can `serve` indefinitely, real persistence, a
 real join flow) already exists and is what such a box would run
 unmodified.
 
+**Relay mode — built (2026-09-22): the box doesn't need an authoring
+identity, only a network one.** Raised in conversation as a feasibility
+question about the Pi box above: does a purely-passive relay need to
+"be" anyone? No, and the reason is structural, not a policy choice —
+every entry in this design is self-authenticating (signed by its
+original author, content-addressed), so a node that only stores and
+forwards other people's already-signed entries never has to sign
+anything or vouch for content itself, the same way a CDN caches content
+it didn't create. Capability here is also a bearer secret, not bound to
+who's holding it (SPEC.md §3.4) — a Read-capability relay is sufficient
+to receive full history and serve it back to any other peer holding at
+least Read into the same namespace; it never needs write access of its
+own. **Confirmed live, not just reasoned through** — and a real
+correction found in the process (see `crates/atproto-iroh-cli/src/
+main.rs`'s top comment for the full account): the first version of this
+claimed a relay-mode CLI process creates *zero* `AuthorId` at all;
+testing found that's wrong — `iroh-docs`' `DefaultAuthor::load` mints
+and persists one unconditionally inside `Docs::persistent(...).spawn(
+...)`, regardless of whether application code ever asks for one, and
+there's no way to opt out through the public `Docs::persistent()`
+builder this crate uses. What *is* true, confirmed by a live two-node
+test (`join` a Read-mode ticket, `dump` the relay's copy): the relay's
+local unused author never appears in any synced entry, because nothing
+in relay mode (`join`/`dump`/`messages`/`tags`/`images`/`serve` — every
+CLI command that doesn't need to write) ever calls it to sign anything.
+CLI refactored so `author()` is resolved lazily per-command rather than
+unconditionally in `main()`, which is what makes that true — a relay
+process really can run `join <ticket>` (once per namespace) then
+`serve` indefinitely without its authoring key ever leaving local
+storage or reaching a peer, even though the key itself still exists on
+disk as an iroh-docs implementation detail.
+
+**Publication story — there isn't one, on purpose.** The relay doesn't
+discover namespaces; it's provisioned, exactly like any other peer —
+whoever sets up the box runs `join <ticket>` once per namespace it
+should hold. Raised as a SPOF concern (2026-09-22): is "peers get keys
+from the relay" a single point of failure? Narrower than it sounds,
+because of the bearer-secret property above — a ticket *is* the
+capability, not a claim check for one, so once someone scans the box's
+QR code they hold the actual secret on their own device permanently,
+independent of the relay's continued existence. The relay is a SPOF for
+exactly one moment (the initial handout — if it's offline right when
+someone wants to join, they can't onboard that second) and not for
+anything after that: existing members keep syncing with each other, or
+re-share tickets peer-to-peer, with no further dependency on the box.
+The sharper risk isn't availability, it's replication — if the relay is
+the only node that ever holds full history, losing it loses whatever
+never made it anywhere else, which is a reason to run more than one
+relay for anything that matters, not a flaw in the single-relay model
+itself.
+
+**Headless provisioning — a real gap, not solved by the CLI existing.**
+Raised in conversation (2026-09-22): the box has no keyboard or display,
+so how does anyone actually run `join`/`serve --share` on it, and how
+does a ticket get *out* of it to onboard people? Two separate problems,
+neither built:
+- **Initial setup** isn't new work — this is the standard headless-Pi
+  pattern (Raspberry Pi Imager pre-flashes SSH-enabled, WiFi-configured
+  SD cards already), so the org's admin SSHes in once (or a first-boot
+  script does it for them), runs `join <ticket>` per namespace and
+  `serve --share`, then walks away. Nothing about this repo needs to
+  solve that problem, only use it.
+- **Handing out a ticket afterward is genuinely two different
+  products, not one box with an optional accessory.** *Admin-
+  distributed*: the admin captures the ticket text over that same SSH
+  session once, at setup, and distributes it however they already
+  communicate (their own laptop can run `ticket_to_qr` and print it) —
+  the box stays headless forever, onboarding never touches it again.
+  *Self-service walk-up*: the box has a real screen rendering a live
+  QR, so anyone can onboard without an admin in the loop — this is the
+  version originally floated, and it's real, unbuilt GPIO/display work,
+  not something the headless SKU gets by default. Which one to actually
+  build is a product decision, not resolved here — they pull toward
+  different hardware.
+- **Adding a second namespace to an already-running box** currently
+  means stopping `serve`, running `join` again, restarting — an SSH
+  operation, fine for one-org-per-box, awkward for a box meant to relay
+  several groups at once. Not addressed.
+
 **Background execution — fleshed out, not relied on.** The naive
 assumption ("the app just stays running and syncs") breaks hardest on
 Android: Doze/App Standby aggressively suspends processes and kills

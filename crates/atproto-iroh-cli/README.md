@@ -39,6 +39,36 @@ then `dump` — the joining side's dump showed the exact entry the serving
 side had written, over a real QUIC connection between two OS processes on
 this machine.
 
+## Relay mode
+
+`join` (once per namespace) then `serve`, no flag needed — this is
+already the full "passive relay, no authoring identity" story the
+Raspberry-Pi-as-sold-hardware idea (root `CLAUDE.md`'s federation-model
+section) needs. Why it works: every entry here is self-authenticating
+(signed by its original author, content-addressed), so a node that only
+stores and forwards other people's entries never has to sign anything
+itself, and capability is a bearer secret (SPEC.md §3.4) rather than
+tied to who's holding it — a Read-mode ticket is enough for the relay to
+receive full history and serve it to any other peer, no write access of
+its own required. Confirmed live: `join`-ing a Read-mode ticket and
+dumping the relay's own copy shows every entry from the ticket's issuer,
+none from the relay's own (unused) author.
+
+**One correction, found live while verifying this, not assumed clean**:
+"no authoring identity" doesn't mean zero `AuthorId` ever touches disk.
+`iroh-docs` itself creates and persists a default author unconditionally
+inside `Docs::persistent(...).spawn(...)` — regardless of whether
+application code ever asks for one — so even a pure `join`+`serve`
+process ends up with an unused `default-author` file in its data
+directory; there's no way to opt out of this through the public
+`Docs::persistent()` builder this crate uses. What's still true, and is
+the property that actually matters: `author()` (`main.rs`) is resolved
+lazily, only by commands that write something, so a relay-mode process
+never calls it — its unused key never signs an entry, never appears in
+anything a peer receives, and never has to be trusted by anyone. Only
+its network identity (`did:iroh`) is ever exposed, and only because it
+has to be dialable at all.
+
 ## Commands
 
 - `did` — print this CLI identity's `did:iroh`.

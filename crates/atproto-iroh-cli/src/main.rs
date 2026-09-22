@@ -17,6 +17,31 @@
 //! which is a file-lock collision, not graceful concurrent access.
 //! Override with `$ATPROTO_IROH_CLI_DATA_DIR` if a script wants a
 //! specific location instead.
+//!
+//! **Relay mode is `join` + `serve`, and this code never asks for an
+//! authoring identity to do it.** A node whose only job is passively
+//! syncing/relaying already-signed entries never has to sign anything
+//! itself — `join`/`dump`/`messages`/`tags`/`images`/`serve` and every
+//! other read-only command never call `author()` below.
+//!
+//! **Correction, found live while verifying this, not assumed clean:**
+//! that does *not* mean zero `AuthorId` ever touches disk. iroh-docs'
+//! own `DefaultAuthor::load` (`engine.rs`) runs unconditionally inside
+//! `Docs::persistent(...).spawn(...)` — "if the storage is empty
+//! creates a new author and persists it" — independent of whether
+//! application code ever asks for one, so `Node::spawn_persistent`
+//! alone is enough to write a `default-author` file, confirmed by
+//! running `join` on a fresh data directory and checking. There's no
+//! way to opt out of this through the public `Docs::persistent()`
+//! builder this crate uses (the lower-level `Engine::spawn` takes an
+//! explicit author-storage choice, but nothing here calls it directly).
+//! What *is* still true, and is the property that actually matters: an
+//! `AuthorId` that's created but never used to call `put_record`/
+//! `put_text`/`put_bytes` never appears in any synced entry, so no peer
+//! ever sees it or has to trust it — "never signs anything, never
+//! vouches for content it didn't write" holds regardless of whether an
+//! unused key sits in local storage nobody else can see. The claim was
+//! overstated before this comment; this is the accurate version.
 
 use anyhow::{Context, Result};
 use atproto_iroh_core::{
@@ -127,6 +152,21 @@ enum Command {
     /// `share` process, not to `serve`'s own, differently-bound port).
     /// `serve --share` sidesteps that by only ever printing a ticket for
     /// the address it's actually listening on.
+    ///
+    /// **This is also relay mode, with no flag needed.** `serve` never
+    /// calls `author()` — it only reopens namespaces this node already
+    /// holds a capability into (via prior `join` calls) and answers
+    /// sync requests for them. A box meant to be a pure relay
+    /// (CLAUDE.md's federation-model section: the
+    /// Raspberry-Pi-as-sold-hardware idea) is provisioned by running
+    /// `join <ticket>` once per namespace it should hold, then `serve`
+    /// indefinitely. It still has an unused `default-author` sitting in
+    /// its local docs store — iroh-docs creates one unconditionally on
+    /// spawn regardless of application code (`main.rs`'s top comment has
+    /// the live finding) — but nothing ever signs with it, so no peer
+    /// ever sees or has to trust it; only its network identity
+    /// (`did:iroh`) is ever exposed, needed to be dialable at all, never
+    /// used to vouch for content it didn't write.
     Serve {
         #[arg(long)]
         share: Option<String>,
@@ -200,19 +240,34 @@ async fn main() -> Result<()> {
     let node = Node::spawn_persistent(&identity, cli_data_dir())
         .await
         .context("spawning persistent node")?;
-    let author = node.docs().author_default().await?;
 
-    let output = run(&cli.command, &node, author, &identity).await;
+    let output = run(&cli.command, &node, &identity).await;
 
     node.shutdown().await;
     output?;
     Ok(())
 }
 
+/// Resolves this node's default authoring identity — lazily, only when a
+/// command actually needs one, instead of the old unconditional call in
+/// `main()`. **What this does and doesn't buy** (see `main.rs`'s own top
+/// doc comment for the live finding this correction is based on):
+/// `DocsApi::author_default` isn't the only thing that can create an
+/// `AuthorId` — `Docs::persistent(...).spawn(...)` does it regardless,
+/// so a relay-mode node (`join` + `serve`, never calling this function)
+/// still has one sitting on disk. What laziness here *does* guarantee:
+/// no command that only reads/relays ever calls `put_record`/`put_text`/
+/// `put_bytes` under that key, so it never signs anything and never
+/// appears in any entry a peer receives — the property that actually
+/// matters (nothing to trust the relay's authorship of, because it
+/// never claims any) holds either way.
+async fn author(node: &Node) -> Result<iroh_docs::AuthorId> {
+    Ok(node.docs().author_default().await?)
+}
+
 async fn run(
     command: &Command,
     node: &Node,
-    author: iroh_docs::AuthorId,
     identity: &atproto_iroh_core::identity::Identity,
 ) -> Result<()> {
     match command {
@@ -226,6 +281,7 @@ async fn run(
             }
         }
         Command::CreateNamespace => {
+            let author = author(node).await?;
             let doc = node.create_namespace().await?;
             // Posts this identity's Founding claim (SPEC.md §6) right
             // after creation, before anything is ever shared — the real
@@ -270,10 +326,12 @@ async fn run(
             key,
             text,
         } => {
+            let author = author(node).await?;
             let doc = open(node, namespace_id).await?;
             put_text(&doc, author, key, text).await?;
         }
         Command::ReadText { namespace_id, key } => {
+            let author = author(node).await?;
             let doc = open(node, namespace_id).await?;
             match get_text(node, &doc, author, key).await? {
                 Some(text) => println!("{text}"),
@@ -285,6 +343,7 @@ async fn run(
             doc_id,
             text,
         } => {
+            let author = author(node).await?;
             let doc = open(node, namespace_id).await?;
             let rev = save_document_revision(&doc, author, doc_id, text).await?;
             println!("{rev}");
@@ -313,6 +372,7 @@ async fn run(
             }
         }
         Command::Send { namespace_id, text, reply_to } => {
+            let author = author(node).await?;
             let doc = open(node, namespace_id).await?;
             let rkey = messaging::send_message(&doc, author, text.clone(), reply_to.clone()).await?;
             println!("{}/{rkey}", hex::encode(author.as_bytes()));
@@ -333,6 +393,7 @@ async fn run(
             }
         }
         Command::Tag { namespace_id, subject, label } => {
+            let author = author(node).await?;
             let doc = open(node, namespace_id).await?;
             let rkey = tagging::add_tag(&doc, author, subject.clone(), label.clone()).await?;
             println!(
@@ -366,6 +427,7 @@ async fn run(
             }
         }
         Command::UploadImage { namespace_id, path, content_type, caption } => {
+            let author = author(node).await?;
             let doc = open(node, namespace_id).await?;
             let bytes = std::fs::read(path)
                 .with_context(|| format!("reading {}", path.display()))?;
