@@ -15,51 +15,70 @@ Don't skim it and start coding from a half-remembered summary.
 
 ## Status and what to do first
 
-No longer a design sketch with no code. The three `iroh-docs` questions
-this section used to list as the first task are answered — live, against
-the real crate, in `crates/atproto-iroh-core/examples/iroh_docs_probe.rs`
-— and every design fork SPEC.md needed resolved before real code was
-buildable (repo/namespace relationship, flat vs. N-of-M governance,
-rotation vs. mute) is resolved, in `SPEC.md` itself, reasoning kept
-visible per this doc's own practice below. `crates/atproto-iroh-core` has
-real modules now (`identity`, `namespace`, `records`, `governance`,
-`mute`), not a stub — 14/14 tests green as of the last scaffold, unit
-tests for the pure governance/ratification logic plus one live two-node
-integration test doing real QUIC sync.
+No longer a design sketch with no code, and no longer just a scaffold
+either — this section drifted badly behind the actual state of the repo
+for a while (a standing risk this doc's own "keep it accurate" discipline
+exists to catch; caught and fixed 2026-09-22, see git history for
+exactly how stale it had gotten). Current, real state:
 
-Governance is wired now (Tauri's "Client" section below), persistence and
-at-rest encryption are real, and a version-preserving document primitive
-(`namespace::save_document_revision`/`list_document_revisions`/
-`load_document`) exists to fix a real, confirmed CRDT data-loss case —
-see SPEC.md's 2026-09-22 note right before §6 for the finding and
-`crates/atproto-iroh-core/tests/document_revisions.rs` for the live
-proof. There's also a second client now: `crates/atproto-iroh-cli`, a
-one-shot-process-per-command Linux CLI plus a `serve` mode for anything
-that needs to stay reachable — see its own README, including a real bug
-it found and fixed live (a `share` ticket naming a port nothing was still
-listening on, once the process that issued it had already exited).
+`crates/atproto-iroh-core` has eight real modules (`identity`,
+`namespace`, `records`, `governance`, `fold`, `mute`, `paths`,
+`messaging`, `images`, `tagging` — not a stub, not five), all
+exercised live: unit tests for pure logic (governance/ratification,
+`resolve_founding`, `record_ref`) plus a dozen live two-node integration
+tests doing real QUIC sync — messaging, images, tagging, document
+revisions, governance folding, founding claims, persistence, all proven
+against the actual crate, not asserted. Governance is real end to end,
+including a real founding-record mechanism (`governance::Founding`/
+`resolve_founding`, `fold::found_namespace`/`fold_namespace` — SPEC.md §6
+item 16), not the placeholder heuristic earlier versions of this section
+described. Persistence and at-rest encryption are real. The CRDT
+data-loss case in `put_text`-at-a-fixed-key is fixed (version-preserving
+`save_document_revision`/`list_document_revisions`/`load_document`,
+SPEC.md's 2026-09-22 CRDT note) and the Tauri "Shared doc" UI is wired to
+it, including a conflict-visibility pass (Documents UX, batteries list
+below) — not just the primitive existing unused.
 
-What's still genuinely unbuilt: the Tauri "Shared doc" UI hasn't been
-switched from the lossy `put_text` primitive to the new revision-based
-one yet (Tauri README's own note), there's no real founding-record
-mechanism for governance (still resting on a placeholder), and mobile
-(Android/iOS, CLAUDE.md's platform-priority section) hasn't been started
-at all. If a future `iroh-docs` upgrade or new finding turns any of the
-resolved SPEC.md forks out to be wrong, don't patch around it quietly —
-revise the relevant section the same way every previous revision is
-recorded, old reasoning kept visible, not deleted. That's the established
-practice in this document; keep it.
+Two clients now, both real: the Tauri reference app (28 commands — see
+"Client" below) and `crates/atproto-iroh-cli`, a one-shot-process Linux
+CLI plus a `serve` mode for anything that needs to stay reachable (own
+README, including a real bug it found and fixed live: a `share` ticket
+naming a port nothing was still listening on once its issuing process
+had exited). Four of the batteries-included apps are built (Messaging,
+Images, Tagging — cross-lexicon by construction — and Documents UX);
+see that section for exactly what's still just a recommendation
+(Search, Calendar, and the deliberately-not-building-it presence case).
+
+What's still genuinely unbuilt: mobile has real prep (Android-aware data
+directory override, a relay-capable `NetworkPreset`) but no actual built,
+running APK — CLAUDE.md's platform-priority section has the exact gap
+and the commands to close it on a machine with real disk headroom; QR
+scanning (generation only); mute/profile UI has no CLI parity for
+profile specifically; and no thumbnailing/format validation on images.
+If a future `iroh-docs` upgrade or new finding turns any of the resolved
+SPEC.md forks out to be wrong, don't patch around it quietly — revise
+the relevant section the same way every previous revision is recorded,
+old reasoning kept visible, not deleted. That's the established practice
+in this document; keep it, and keep *this section* honest too — it's
+the one a reader hits first, so letting it lag the rest of the document
+defeats the whole point of writing the rest of it accurately.
 
 ## Language and structure
 
-Rust (`.gitignore` already assumes it; iroh's canonical SDK is Rust).
-`street-smarts` (this design's origin repo, also Jason's) uses a Cargo
-workspace under `crates/` with a `[workspace.package]` block for shared
-metadata — this repo now has a minimal one-crate version of that same
-shape (`crates/atproto-iroh-core`, currently a stub). Don't invent the
-full crate breakdown before the `iroh-docs` experiments above answer
-enough of §6 to know where the real module boundaries are — a premature
-multi-crate split encodes uncertainty as if it were architecture.
+Rust (`.gitignore` already assumes it; iroh's canonical SDK is Rust), a
+Cargo workspace under `crates/` with a `[workspace.package]` block for
+shared metadata — same shape `street-smarts` (this design's origin repo,
+also Jason's) uses. Three real crates now, each with a settled reason to
+be separate, not a premature split: `atproto-iroh-core` (protocol logic,
+no UI dependency of any kind), `atproto-iroh-tauri` (the reference GUI,
+depends on `-core` as an ordinary path dependency), `atproto-iroh-cli`
+(the Linux agent-driving client, same relationship). Within `-core`,
+still one crate on purpose — the original caution here was against
+splitting the *protocol* logic prematurely before its own module
+boundaries were evidence-based, and that's still true: `identity`,
+`namespace`, `governance`/`fold`, `mute`, `messaging`, `images`,
+`tagging` are modules within one crate, not separate crates, because
+nothing has yet forced them apart.
 
 ## Client
 
@@ -79,37 +98,28 @@ Mobile exists in Tauri 2.0 but is newer than its desktop story — untested
 here, worth pressure-testing before assuming it if a phone client ever
 matters.
 
-Scaffolded now: `crates/atproto-iroh-tauri` — a separate crate/app
-(Tauri's own `src-tauri` shape) depending on `atproto-iroh-core` as an
-ordinary path dependency, not code added to the core crate itself (the
-existing one-crate caution above is about premature protocol-side
-splitting, never about mixing UI and protocol logic into one crate,
-which shouldn't happen regardless of how many crates the protocol side
-ends up as). Fifteen commands now — sharing/joining, a generic state
-inspector, QR ticket rendering, freeform text, and governance included
-(`spawn_node`/`node_did`/`create_namespace_with_profile`/
-`list_namespaces`/`share_namespace`/`join_namespace`/`dump_namespace`/
-`ticket_to_qr`/`write_text`/`read_text`/`submit_to_inbox`/
-`list_proposals`/`governance_state`/`create_proposal`/`create_signal`),
-a plain HTML/JS/CSS frontend with no bundler and no framework. The inspector
-(`namespace::dump_all`) is genuinely per-record-type-agnostic — every
-entry's bytes get tried as JSON, then UTF-8 text, then a hex fallback, so
-it already covers every record type this crate defines and every
-freeform write, without having been told about any of them individually.
-`namespace::put_text`/`submit_text` (SPEC.md §5's "confirmed in code"
-note) are the concrete answer to "a namespace doesn't have to hold typed
-records at all" — shared mutable text at any key, no lexicon required;
+`crates/atproto-iroh-tauri` — a separate crate/app (Tauri's own
+`src-tauri` shape) depending on `atproto-iroh-core` as an ordinary path
+dependency, not code added to the core crate itself. 28 commands now,
+across identity/namespace/sharing, the generic inspector, QR ticket
+rendering, Shared doc (with conflict-visibility UX), Messaging, Images,
+Tagging (cross-lexicon), Members/Profile, Mute, and governance (real
+`Founding`-based genesis state, not a placeholder) — a plain HTML/JS/CSS
+frontend, no bundler, no framework. Exact command names, what each does,
+and what's still missing live in `crates/atproto-iroh-tauri/README.md`,
+kept current there rather than duplicated and re-drifting here; this
+section stays high-level on purpose. The inspector (`namespace::
+dump_all`) is genuinely per-record-type-agnostic — every entry's bytes
+get tried as JSON, then UTF-8 text, then a hex fallback, so it covers
+every record type this crate defines without having been told about any
+of them individually, current or future. `namespace::put_text`/
+`submit_text`/`put_bytes` (SPEC.md §5's "confirmed in code" note) are
+the concrete answer to "a namespace doesn't have to hold typed records
+at all" — shared mutable text or bytes at any key, no lexicon required;
 `submit_text` specializes that for uncoordinated public submission (a
-public inbox), safe against forgery by construction
-(`RecordIdentifier`'s `(namespace, author, key)` shape, §3.4) even when
-the write ticket granting access is deliberately posted somewhere public.
-`cargo build -p atproto-iroh-tauri` verified clean, not just written —
-see its own `README.md` for exactly what that check did and didn't
-cover, and for everything real still missing (a real founding-record
-mechanism, mute UI, QR scanning) before this is a usable app rather
-than a proof the layers connect. Governance is wired
-(`list_proposals`/`governance_state`/`create_proposal`/`create_signal`)
-— see the README's note on what it's still resting on a placeholder for.
+public inbox), safe against forgery by construction (`RecordIdentifier`'s
+`(namespace, author, key)` shape, §3.4) even when the write ticket
+granting access is deliberately posted somewhere public.
 
 **Persistence is real now too** (`identity::Identity::load_or_generate`,
 `namespace::Node::spawn_persistent`) — data under

@@ -218,10 +218,6 @@ this is a UI on top of.
 This proves the wiring, not a usable app. Missing, in roughly the order
 a real client would need them:
 
-- **A UI for founding with more than one co-founder.** The mechanism
-  supports it (`resolve_founding`'s whole acceptance-window design exists
-  for exactly this case); this app just never prompts for it — see the
-  Governance bullet above.
 - **QR scanning.** Generation only. Decoding would need webview camera
   access (`getUserMedia` + a JS decoder, e.g. `jsQR`) — plausible on
   desktop since Tauri's webview is a real browser engine, but camera
