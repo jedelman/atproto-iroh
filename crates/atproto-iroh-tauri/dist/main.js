@@ -219,7 +219,15 @@ refreshMuted();
 // --- Shared doc --------------------------------------------------------
 
 const docStatusEl = document.getElementById("doc-status");
+const docConflictEl = document.getElementById("doc-conflict");
 const docHistoryEl = document.getElementById("doc-history");
+
+// Revisions are keyed by new_entry_key()'s sortable, zero-padded
+// microsecond-timestamp string (namespace.rs) — parseable back into a
+// number for exactly this: deciding whether two revisions were close
+// enough in time to have plausibly been concurrent, offline edits
+// rather than one person's own sequential saves.
+const CONCURRENT_WINDOW_MICROS = 5 * 60 * 1_000_000; // 5 minutes
 
 document.getElementById("write-text").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -234,12 +242,13 @@ document.getElementById("write-text").addEventListener("submit", async (event) =
     // data-loss case under concurrent offline edits).
     const rev = await invoke("doc_save", { namespaceId, docId, text });
     docStatusEl.textContent = `saved revision ${rev} at ${new Date().toLocaleTimeString()}`;
+    await refreshDocHistory();
   } catch (err) {
     docStatusEl.textContent = `error: ${err}`;
   }
 });
 
-document.getElementById("doc-load").addEventListener("click", async () => {
+async function loadLatestAndHistory() {
   const namespaceId = document.getElementById("doc-namespace-id").value;
   const docId = document.getElementById("doc-id").value;
   docStatusEl.textContent = "loading…";
@@ -256,27 +265,59 @@ document.getElementById("doc-load").addEventListener("click", async () => {
   } catch (err) {
     docStatusEl.textContent = `error: ${err}`;
   }
-});
+  await refreshDocHistory();
+}
 
-document.getElementById("doc-history-btn").addEventListener("click", async () => {
+async function refreshDocHistory() {
   const namespaceId = document.getElementById("doc-namespace-id").value;
   const docId = document.getElementById("doc-id").value;
-  docHistoryEl.textContent = "";
+  docHistoryEl.innerHTML = "";
+  docConflictEl.textContent = "";
+  docConflictEl.className = "value";
   try {
     const revisions = await invoke("doc_history", { namespaceId, docId });
     if (revisions.length === 0) {
       docHistoryEl.textContent = "(no revisions yet)";
       return;
     }
+
+    // A real concurrent-edit signal: the two most recent revisions came
+    // from different authors and landed within the window above of each
+    // other — not just "there's more than one revision," since a single
+    // person saving twice in a row is normal, not a conflict.
+    if (revisions.length >= 2) {
+      // doc_history's tuples are (rev, author_hex, text) — rev (index 0)
+      // is the sortable microsecond-timestamp string, author_hex is
+      // index 1.
+      const secondLast = revisions[revisions.length - 2];
+      const last = revisions[revisions.length - 1];
+      const gap = Number(BigInt(last[0]) - BigInt(secondLast[0]));
+      if (secondLast[1] !== last[1] && gap <= CONCURRENT_WINDOW_MICROS) {
+        docConflictEl.textContent =
+          "⚠ possible conflict: the two most recent revisions came from different people within 5 minutes of each other. Review both below and pick one with \"Use this\" before saving again.";
+        docConflictEl.className = "value conflict";
+      }
+    }
+
     for (const [rev, authorHex, text] of revisions) {
       const li = document.createElement("li");
-      li.textContent = `${rev} — ${authorHex.slice(0, 8)}…: ${text}`;
+      li.textContent = `${rev} — ${authorHex.slice(0, 8)}…: ${text} `;
+      const useBtn = document.createElement("button");
+      useBtn.type = "button";
+      useBtn.textContent = "Use this";
+      useBtn.addEventListener("click", () => {
+        document.getElementById("doc-text").value = text;
+        docStatusEl.textContent = `loaded revision ${rev} into the box — edit and Save to resolve`;
+      });
+      li.appendChild(useBtn);
       docHistoryEl.appendChild(li);
     }
   } catch (err) {
     docHistoryEl.textContent = `error: ${err}`;
   }
-});
+}
+
+document.getElementById("doc-load").addEventListener("click", loadLatestAndHistory);
 
 // --- Messages ------------------------------------------------------
 

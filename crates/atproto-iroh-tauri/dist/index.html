@@ -173,9 +173,13 @@
           everything else here. "A Google doc without Google." Each save
           writes a new, immutable revision rather than overwriting the
           last one — two people editing the same doc while offline from
-          each other both keep their edit; "Load" shows the latest by
-          save time, "History" shows every revision so you can notice
-          when more than one landed instead of silently losing one.
+          each other both keep their edit. "Load" always refreshes the
+          full history alongside it: if two revisions from different
+          people landed close together in time, that's a real sign of a
+          concurrent edit, and it's flagged rather than silently picking
+          one. Click "Use this" on any revision to bring its text into
+          the box below, review or merge by hand, then Save — that's how
+          a conflict actually gets resolved here, not automatically.
         </p>
         <form id="write-text">
           <label>
@@ -191,10 +195,10 @@
             <textarea id="doc-text" rows="6"></textarea>
           </label>
           <button type="submit">Save</button>
-          <button type="button" id="doc-load">Load latest</button>
-          <button type="button" id="doc-history-btn">History</button>
+          <button type="button" id="doc-load">Load + refresh history</button>
         </form>
         <p id="doc-status" class="value">—</p>
+        <p id="doc-conflict" class="value"></p>
         <ul id="doc-history" class="value"></ul>
       </section>
 

@@ -59,7 +59,21 @@ this is a UI on top of.
   can surface "someone else edited this while you were offline" instead
   of quietly discarding it. `namespace::put_text`/`get_text` still exist
   in the core crate (right primitive for genuinely single-writer text)
-  but nothing in this UI calls them anymore.
+  but nothing in this UI calls them anymore. **Conflict visibility, not
+  just history, built 2026-09-22**: "Load" now always refreshes history
+  alongside it, and `main.js` flags a real concurrent-edit signal — the
+  two most recent revisions from *different authors* within 5 minutes of
+  each other (not just "more than one revision exists," which a single
+  person saving twice in a row also produces) — with a visible
+  `⚠ possible conflict` banner and a "Use this" button per revision that
+  loads it into the edit box for review. Still no automatic merge —
+  resolving a conflict is a human reading both revisions and re-saving,
+  same as it always would be; this closes the *visibility* gap (silently
+  picking a side), which is what was actually missing, not a text-diff
+  problem this session never claimed to solve. The banner logic is
+  pure/no-DOM and unit-tested standalone (five assertions including the
+  exact window-boundary case) since nothing else in this reference app's
+  JS has test coverage otherwise.
 - **Inbox** (`namespace::submit_text`, `dist`'s "Inbox" section): the
   freeform layer's other half — `submit_text` mints a fresh key per call
   (`new_entry_key`, shared with `fold.rs`'s `propose`/`signal`), so any
@@ -217,10 +231,11 @@ a real client would need them:
   desktop. Worth verifying before building, not assuming.
 - **Any error/loading state beyond `textContent = "error: ..."`.** Fine
   for proving the wiring, not fine for anyone else to use.
-- **No merge UI for concurrent doc revisions.** `doc_history` surfaces
-  every revision so a person can *see* that two edits landed close
-  together, but nothing here helps them reconcile the two — that's on
-  the person reading the list and re-saving by hand.
+- **No automatic merge for concurrent doc revisions.** The Shared doc
+  section flags the conflict and lets a person load either revision for
+  review (see its own bullet above), but reconciling two edits into one
+  is still on the person reading them and re-saving by hand — a real
+  text-diff/merge tool was never in this session's scope.
 
 ## Building
 

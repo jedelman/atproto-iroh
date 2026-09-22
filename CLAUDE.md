@@ -294,12 +294,23 @@ Recommended list, each tagged with its pattern:
   `messages` subcommands (`send` prints the new message's own
   `{author_hex}/{rkey}` ref, copy-pasteable straight into a later
   `send --reply-to`).
-- **Documents** — shared mutable state; this is exactly what
-  `save_document_revision`/`list_document_revisions`/`load_document`
-  (just built) are for. Needs real UI on top: showing "someone else
-  edited this while you were offline" and a merge/pick step, not just
-  silently picking the latest revision the way `load_document`'s default
-  does.
+- **Documents UX — built (2026-09-22).** The primitive
+  (`save_document_revision`/`list_document_revisions`/`load_document`)
+  already existed; what was missing was surfacing the conflict rather
+  than silently picking a side. `dist`'s Shared doc section now: "Load"
+  always refreshes full history alongside it (one click, not two); a
+  client-side check (`main.js`, unit-tested standalone — five assertions
+  on the exact boundary condition, since this is pure-logic code with no
+  Rust-side test coverage) flags a real concurrent-edit signal — the two
+  most recent revisions came from *different authors* within 5 minutes
+  of each other, not just "there's more than one revision" (a single
+  person saving twice in a row is normal, not a conflict) — with a
+  visible `⚠ possible conflict` banner; every revision in history gets a
+  "Use this" button that loads its text into the edit box for review.
+  **Still no automatic merge** — resolution is a human reading both
+  revisions and re-saving, same as it always would be; this closes the
+  visibility gap (silently picking one), not the "diff and merge text"
+  problem, which was never in scope.
 - **Images — built (2026-09-22).** `crates/atproto-iroh-core/src/
   images.rs`: `ImageMeta` (`network.essmesh.chat.image`,
   `lexicons/network/essmesh/chat/image.json`), `upload_image`/

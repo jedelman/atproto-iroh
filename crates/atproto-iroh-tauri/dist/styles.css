@@ -46,3 +46,12 @@ label {
   word-break: break-all;
   opacity: 0.8;
 }
+
+/* A real signal (two revisions from different people landed close
+   together in time), not decoration — kept to one rule on purpose,
+   same "undesigned, functional" posture as the rest of this file. */
+.conflict {
+  font-weight: bold;
+  border: 1px solid currentColor;
+  padding: 0.5rem;
+}
