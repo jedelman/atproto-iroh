@@ -119,6 +119,77 @@ pub async fn put_record<R: Record>(
     Ok(doc.set_bytes(author, key_for::<R>(rkey), bytes).await?)
 }
 
+/// Writes plain text at a caller-chosen key — no `Record` impl, no
+/// lexicon, no collection prefix. The freeform half of the namespace
+/// model: everything above this function treats a namespace as a bag of
+/// typed collections, but nothing about `iroh-docs` — or this crate —
+/// actually requires that. A namespace is a capability-scoped, synced,
+/// multi-writer key/value space; typed records are one way to use that,
+/// shared mutable text at whatever key a person picks is another. Same
+/// sync, same capability model, same `dump_all` inspector (which reads
+/// this back as `EntryContent::Text`), no new machinery.
+pub async fn put_text(
+    doc: &Doc,
+    author: AuthorId,
+    key: &str,
+    text: &str,
+) -> Result<iroh_blobs::Hash> {
+    Ok(doc
+        .set_bytes(author, key.as_bytes().to_vec(), text.as_bytes().to_vec())
+        .await?)
+}
+
+/// Reads freeform text back. Fails (rather than returning `None`) if the
+/// entry exists but isn't valid UTF-8 — unlike `dump_all`, which falls
+/// back to hex for exactly that case, this function is for a caller who
+/// specifically expects text and wants to know if that expectation was
+/// wrong, not to silently paper over it.
+pub async fn get_text(
+    node: &Node,
+    doc: &Doc,
+    author: AuthorId,
+    key: &str,
+) -> Result<Option<String>> {
+    let Some(entry) = doc.get_exact(author, key.as_bytes().to_vec(), false).await? else {
+        return Ok(None);
+    };
+    let bytes = node.blob_store().get_bytes(entry.content_hash()).await?;
+    Ok(Some(String::from_utf8(bytes.to_vec())?))
+}
+
+/// Submits text under a fresh, auto-generated key beneath `prefix` —
+/// the "public inbox" primitive: any number of strangers holding a write
+/// ticket can each call this without coordinating on a key, because
+/// `new_entry_key` gives every call its own. What it does *not* do,
+/// deliberately: nothing about rate-limiting, moderation, or who gets to
+/// read the inbox back — a namespace opened this widely is exactly the
+/// case where flooding stops being unlikely (SPEC.md §6 item 12's
+/// resource-attack case), and this function's job is the write path
+/// only, not a policy about it.
+pub async fn submit_text(
+    doc: &Doc,
+    author: AuthorId,
+    prefix: &str,
+    text: &str,
+) -> Result<String> {
+    let rkey = new_entry_key();
+    let key = format!("{prefix}/{rkey}");
+    put_text(doc, author, &key, text).await?;
+    Ok(key)
+}
+
+/// A sortable, timestamp-derived key. **Not** a real atproto TID (that's
+/// a specific base32-sortable, clock-and-counter scheme this doesn't
+/// implement) — good enough for uniqueness and creation-order sorting
+/// within this scaffold, not yet interoperable with real atproto
+/// tooling. Named plainly rather than `tid()` so nobody mistakes it for
+/// the real thing. Shared by `fold.rs`'s `propose`/`signal` and
+/// `submit_text` above — any caller that needs "a fresh, sortable key,
+/// nobody else will pick the same one" wants this same primitive.
+pub fn new_entry_key() -> String {
+    format!("{:019}", chrono::Utc::now().timestamp_micros())
+}
+
 /// Reads one typed record back. Needs `node`'s blob store because a
 /// synced `Entry` only carries a content hash + length — the bytes
 /// themselves live in the blobs store, fetched separately (checked
@@ -214,13 +285,21 @@ pub struct RawEntry {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum EntryContent {
-    /// Parsed successfully — every record type this crate writes lands
-    /// here, since they're all JSON.
+    /// Parsed successfully — every lexicon-typed record this crate
+    /// writes lands here, since they're all JSON.
     Json(serde_json::Value),
-    /// Didn't parse as JSON (or the blob hadn't finished downloading —
-    /// see `get_record`'s note on content lagging metadata; a `Raw`
-    /// entry the caller expected to be JSON is worth a retry, not
-    /// necessarily proof of a non-JSON record).
+    /// Valid UTF-8 but not JSON — `put_text`'s freeform writes land here.
+    /// A namespace isn't only ever a bag of typed records; SPEC.md §5's
+    /// "almost nothing past §3.1 is actually ESS-specific" already said
+    /// this substrate generalizes, and this is that made concrete: shared
+    /// mutable text at any key, no schema, no `Record` impl required —
+    /// the same sync/capability machinery, used as a plain document
+    /// instead of a typed collection.
+    Text(String),
+    /// Neither of the above (or the blob hadn't finished downloading —
+    /// see `get_record`'s note on content lagging metadata; a `Raw` entry
+    /// the caller expected to be JSON or text is worth a retry, not
+    /// necessarily proof of anything about the record itself).
     Raw { hex: String },
 }
 
@@ -239,8 +318,11 @@ pub async fn dump_all(node: &Node, doc: &Doc) -> Result<Vec<RawEntry>> {
         let content = match node.blob_store().get_bytes(entry.content_hash()).await {
             Ok(bytes) => match serde_json::from_slice(&bytes) {
                 Ok(value) => EntryContent::Json(value),
-                Err(_) => EntryContent::Raw {
-                    hex: hex::encode(&bytes),
+                Err(_) => match String::from_utf8(bytes.to_vec()) {
+                    Ok(text) => EntryContent::Text(text),
+                    Err(_) => EntryContent::Raw {
+                        hex: hex::encode(&bytes),
+                    },
                 },
             },
             // Content blob still downloading (see read_entry's note) or
@@ -258,4 +340,16 @@ pub async fn dump_all(node: &Node, doc: &Doc) -> Result<Vec<RawEntry>> {
         });
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_entry_key_is_monotonic_enough_to_sort_by() {
+        let a = new_entry_key();
+        let b = new_entry_key();
+        assert!(b >= a);
+    }
 }

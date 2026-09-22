@@ -118,6 +118,59 @@ document
     }
   });
 
+// --- Shared doc --------------------------------------------------------
+
+const docStatusEl = document.getElementById("doc-status");
+
+document.getElementById("write-text").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const namespaceId = document.getElementById("doc-namespace-id").value;
+  const key = document.getElementById("doc-key").value;
+  const text = document.getElementById("doc-text").value;
+  docStatusEl.textContent = "saving…";
+  try {
+    await invoke("write_text", { namespaceId, key, text });
+    docStatusEl.textContent = `saved at ${new Date().toLocaleTimeString()}`;
+  } catch (err) {
+    docStatusEl.textContent = `error: ${err}`;
+  }
+});
+
+document.getElementById("doc-load").addEventListener("click", async () => {
+  const namespaceId = document.getElementById("doc-namespace-id").value;
+  const key = document.getElementById("doc-key").value;
+  docStatusEl.textContent = "loading…";
+  try {
+    const text = await invoke("read_text", { namespaceId, key });
+    document.getElementById("doc-text").value = text ?? "";
+    docStatusEl.textContent =
+      text === null ? "(nothing at that key yet)" : "loaded";
+  } catch (err) {
+    docStatusEl.textContent = `error: ${err}`;
+  }
+});
+
+// --- Inbox ---------------------------------------------------------
+
+const inboxStatusEl = document.getElementById("inbox-status");
+
+document
+  .getElementById("submit-inbox")
+  .addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const namespaceId = document.getElementById("inbox-namespace-id").value;
+    const prefix = document.getElementById("inbox-prefix").value;
+    const text = document.getElementById("inbox-text").value;
+    inboxStatusEl.textContent = "submitting…";
+    try {
+      const key = await invoke("submit_to_inbox", { namespaceId, prefix, text });
+      inboxStatusEl.textContent = `submitted at ${key}`;
+      document.getElementById("inbox-text").value = "";
+    } catch (err) {
+      inboxStatusEl.textContent = `error: ${err}`;
+    }
+  });
+
 // --- Inspector -------------------------------------------------------
 // Naive on purpose: no per-record-type rendering, just a generic
 // recursive view over whatever dump_namespace hands back. Adding a new
@@ -161,16 +214,24 @@ function renderEntries(entries) {
 }
 
 // Generic recursive renderer for whatever dump_namespace's `content`
-// field contains: `{kind: "json", value: <anything>}` or
+// field contains: `{kind: "json", value: <anything>}`,
+// `{kind: "text", value: "..."}` (freeform put_text writes), or
 // `{kind: "raw", value: {hex: "..."}}`. Walks arbitrary JSON structure —
 // this is the part that makes it "reflective": it never assumes a
-// shape, so it never needs updating when a new record type shows up.
+// shape, so it never needs updating when a new record type — or a
+// freeform document, or an inbox submission — shows up.
 function renderValue(node) {
+  if (node && node.kind === "text") {
+    const pre = document.createElement("pre");
+    pre.className = "value";
+    pre.textContent = node.value;
+    return pre;
+  }
   if (node && node.kind === "raw") {
     const pre = document.createElement("pre");
     pre.className = "value";
     pre.textContent = node.value.hex
-      ? `(raw, not JSON) ${node.value.hex}`
+      ? `(raw, not JSON or text) ${node.value.hex}`
       : "(content not synced yet)";
     return pre;
   }

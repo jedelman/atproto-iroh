@@ -71,20 +71,28 @@ ordinary path dependency, not code added to the core crate itself (the
 existing one-crate caution above is about premature protocol-side
 splitting, never about mixing UI and protocol logic into one crate,
 which shouldn't happen regardless of how many crates the protocol side
-ends up as). Eight commands now — sharing/joining, a generic state
-inspector, and QR ticket rendering included
+ends up as). Eleven commands now — sharing/joining, a generic state
+inspector, QR ticket rendering, and freeform text included
 (`spawn_node`/`node_did`/`create_namespace_with_profile`/
 `list_namespaces`/`share_namespace`/`join_namespace`/`dump_namespace`/
-`ticket_to_qr`), a plain HTML/JS/CSS frontend with no bundler and no
-framework. The inspector (`namespace::dump_all`) is genuinely
-per-record-type-agnostic — every entry's bytes get tried as JSON with a
-hex fallback, so it already covers every record type this crate defines
-without having been told about any of them individually. `cargo build -p
-atproto-iroh-tauri` verified clean, not just written — see its own
-`README.md` for exactly what that check did and didn't cover, and for
-everything real still missing (governance UI, persistence, mute UI, QR
-scanning) before this is a usable app rather than a proof the layers
-connect.
+`ticket_to_qr`/`write_text`/`read_text`/`submit_to_inbox`), a plain
+HTML/JS/CSS frontend with no bundler and no framework. The inspector
+(`namespace::dump_all`) is genuinely per-record-type-agnostic — every
+entry's bytes get tried as JSON, then UTF-8 text, then a hex fallback, so
+it already covers every record type this crate defines and every
+freeform write, without having been told about any of them individually.
+`namespace::put_text`/`submit_text` (SPEC.md §5's "confirmed in code"
+note) are the concrete answer to "a namespace doesn't have to hold typed
+records at all" — shared mutable text at any key, no lexicon required;
+`submit_text` specializes that for uncoordinated public submission (a
+public inbox), safe against forgery by construction
+(`RecordIdentifier`'s `(namespace, author, key)` shape, §3.4) even when
+the write ticket granting access is deliberately posted somewhere public.
+`cargo build -p atproto-iroh-tauri` verified clean, not just written —
+see its own `README.md` for exactly what that check did and didn't
+cover, and for everything real still missing (governance UI, persistence,
+mute UI, QR scanning) before this is a usable app rather than a proof
+the layers connect.
 
 ## Lexicons
 

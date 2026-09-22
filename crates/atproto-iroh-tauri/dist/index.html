@@ -61,22 +61,23 @@
           <label>
             Access
             <select id="share-mode">
-              <option value="Read" selected>Read only</option>
-              <option value="Write">Write (full member)</option>
+              <option value="Write">Write (anyone with this can add to the namespace)</option>
+              <option value="Read">Read only</option>
             </select>
           </label>
           <button type="submit">Create ticket</button>
         </form>
         <p class="hint">
           A ticket is a capability, not a link to a server — see
-          SPEC.md §3.4/§3.6. Anyone holding it can sync this namespace
-          directly with this node; there's nothing else granting or
-          revoking it. <strong>A Write ticket is a shared secret with no
-          per-holder revocation</strong> — anyone who ever sees it, sees
-          it forever (SPEC.md §6 item 12). Read-only defaults to selected
-          on purpose: only pick Write for someone you're handing this to
-          directly, never for anything you're about to post, print, or
-          paste somewhere public.
+          SPEC.md §3.4/§3.6. Anyone holding it syncs this namespace
+          directly with this node; nothing else grants or revokes it.
+          Write is a shared secret with no per-holder revocation (SPEC.md
+          §6 item 12) — everyone who ever holds it can write forever, but
+          nobody can forge or overwrite anyone else's entries, so a
+          Write ticket posted publicly is a real pattern, not a mistake:
+          a public inbox, a dead drop, a graffiti wall anyone can add to.
+          What it needs on the read side is moderation/volume handling,
+          not restriction on the write side — see the Inbox section.
         </p>
         <textarea id="ticket-out" class="value" readonly rows="3"></textarea>
         <button id="show-qr" type="button">Show as QR</button>
@@ -93,6 +94,63 @@
           <button type="submit">Join</button>
         </form>
         <p id="joined" class="value">—</p>
+      </section>
+
+      <section>
+        <h2>Shared doc</h2>
+        <p class="hint">
+          No schema, no lexicon — plain text at a key everyone with write
+          access shares and edits. Same sync and capability machinery as
+          everything else here, used as a document instead of a typed
+          record. "A Google doc without Google."
+        </p>
+        <form id="write-text">
+          <label>
+            Namespace id
+            <input id="doc-namespace-id" type="text" required />
+          </label>
+          <label>
+            Key
+            <input id="doc-key" type="text" value="doc/body" required />
+          </label>
+          <label>
+            Text
+            <textarea id="doc-text" rows="6"></textarea>
+          </label>
+          <button type="submit">Save</button>
+          <button type="button" id="doc-load">Load</button>
+        </form>
+        <p id="doc-status" class="value">—</p>
+      </section>
+
+      <section>
+        <h2>Inbox</h2>
+        <p class="hint">
+          Submit under a fresh, auto-generated key — no coordination
+          needed between submitters, no collisions, nobody can overwrite
+          anyone else's submission or the namespace owner's own records
+          (SPEC.md §3.4's per-author identifier finding). Pair this with
+          a Write QR code posted somewhere public and this is a public
+          drop box, an anonymous tip line, a guestbook — whatever a
+          "write-only-ish" namespace is good for. Read it back with the
+          Inspector below, filtered to this prefix.
+        </p>
+        <form id="submit-inbox">
+          <label>
+            Namespace id
+            <input id="inbox-namespace-id" type="text" required />
+          </label>
+          <label>
+            Prefix
+            <input id="inbox-prefix" type="text" value="inbox" required />
+          </label>
+          <label>
+            Message
+            <textarea id="inbox-text" rows="4" required></textarea>
+          </label>
+          <button type="submit">Submit</button>
+        </form>
+        <p id="inbox-status" class="value">—</p>
       </section>
 
       <section>

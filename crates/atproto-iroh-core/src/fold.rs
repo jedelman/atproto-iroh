@@ -21,7 +21,7 @@ use iroh_docs::{api::Doc, AuthorId};
 use crate::governance::{
     self, subject_ref, GovernanceClass, PolicyValue, Proposal, Ratification, Signal,
 };
-use crate::namespace::{list_records, put_record, Node};
+use crate::namespace::{list_records, new_entry_key, put_record, Node};
 
 #[derive(Debug, Clone)]
 pub struct GovernanceState {
@@ -152,7 +152,7 @@ pub async fn propose(
     author: AuthorId,
     proposal: &Proposal,
 ) -> Result<String> {
-    let rkey = new_tid();
+    let rkey = new_entry_key();
     put_record(doc, author, &rkey, proposal).await?;
     Ok(rkey)
 }
@@ -167,29 +167,7 @@ pub async fn signal(
     mut signal: Signal,
 ) -> Result<String> {
     signal.subject = subject_ref(&hex::encode(proposal_author.as_bytes()), proposal_rkey);
-    let rkey = new_tid();
+    let rkey = new_entry_key();
     put_record(doc, author, &rkey, &signal).await?;
     Ok(rkey)
-}
-
-/// A sortable, timestamp-derived record key. **Not** a real atproto TID
-/// (that's a specific base32-sortable, clock-and-counter scheme this
-/// doesn't implement) — good enough for `rkey` uniqueness and
-/// creation-order sorting within this scaffold, not yet interoperable
-/// with real atproto tooling. Named plainly rather than `tid()` so
-/// nobody mistakes it for the real thing.
-fn new_tid() -> String {
-    format!("{:019}", Utc::now().timestamp_micros())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn new_tid_is_monotonic_enough_to_sort_by() {
-        let a = new_tid();
-        let b = new_tid();
-        assert!(b >= a);
-    }
 }

@@ -11,10 +11,10 @@ use std::collections::HashMap;
 
 use atproto_iroh_core::{
     identity::Identity,
-    namespace::{dump_all, put_record, Node, RawEntry},
+    namespace::{dump_all, get_text, put_record, put_text, submit_text, Node, RawEntry},
     records::{NodeCategory, NodeProfile},
 };
-use iroh_docs::{api::protocol::ShareMode, api::Doc, DocTicket};
+use iroh_docs::{api::protocol::ShareMode, api::Doc, AuthorId, DocTicket};
 use tauri::State;
 use tokio::sync::Mutex;
 
@@ -36,6 +36,26 @@ struct AppState {
     identity: Mutex<Option<Identity>>,
     node: Mutex<Option<Node>>,
     docs: Mutex<HashMap<String, Doc>>,
+    /// One record-signing identity, reused across every write this
+    /// session makes rather than minted fresh per call — so edits to the
+    /// same freeform doc (or the same inbox) from one person show up
+    /// under one consistent author, not a different stranger each time.
+    /// Distinct from `identity` (the node's own `did:iroh`) for the same
+    /// reason `namespace.rs`'s own doc comment gives: an `Author` signs
+    /// entries, it isn't the node's identity.
+    author: Mutex<Option<AuthorId>>,
+}
+
+async fn ensure_author(state: &AppState) -> Result<AuthorId, String> {
+    let mut author = state.author.lock().await;
+    if let Some(author) = *author {
+        return Ok(author);
+    }
+    let node = state.node.lock().await;
+    let node = node.as_ref().ok_or("call spawn_node first")?;
+    let created = node.author_create().await.map_err(|e| e.to_string())?;
+    *author = Some(created);
+    Ok(created)
 }
 
 #[tauri::command]
@@ -67,10 +87,10 @@ async fn create_namespace_with_profile(
     name: String,
     category: NodeCategory,
 ) -> Result<String, String> {
+    let author = ensure_author(&state).await?;
     let node = state.node.lock().await;
     let node = node.as_ref().ok_or("call spawn_node first")?;
 
-    let author = node.author_create().await.map_err(|e| e.to_string())?;
     let doc = node.create_namespace().await.map_err(|e| e.to_string())?;
 
     let profile = NodeProfile {
@@ -158,14 +178,14 @@ async fn dump_namespace(
     dump_all(node, doc).await.map_err(|e| e.to_string())
 }
 
-/// Renders a ticket string as an SVG QR code — nothing more than that;
-/// callers decide the access mode before calling `share_namespace`, this
-/// only pictures whatever ticket it's handed. **Deliberately no
-/// enforcement here that a `Write` ticket can't be turned into a QR** —
-/// the safety judgment (read-only for anything posted somewhere public,
-/// since a photographed ticket is a bearer secret with no per-holder
-/// revocation — SPEC.md §6 item 12) belongs in the UI/human decision of
-/// what to render a code for, not silently guessed at in this function.
+/// Renders a ticket string as an SVG QR code — nothing more than that.
+/// No restriction on which mode gets turned into a code: a `Write` QR
+/// posted somewhere public is a real, intended pattern (a public inbox —
+/// anyone can submit under their own author, nobody can forge or
+/// overwrite someone else's entry, SPEC.md §3.4's per-author identifier
+/// finding already makes that safe). What that pattern actually needs is
+/// moderation/volume handling on the read side, not a restriction on the
+/// write side — see `submit_text` below and README.md.
 #[tauri::command]
 fn ticket_to_qr(ticket: String) -> Result<String, String> {
     let code = qrcode::QrCode::new(ticket.as_bytes()).map_err(|e| e.to_string())?;
@@ -175,6 +195,71 @@ fn ticket_to_qr(ticket: String) -> Result<String, String> {
         .dark_color(qrcode::render::svg::Color("#000000"))
         .light_color(qrcode::render::svg::Color("#ffffff"))
         .build())
+}
+
+/// Writes freeform text at a caller-chosen key — the "Google doc without
+/// Google" primitive, `namespace::put_text` unwrapped for the UI. No
+/// lexicon, no `Record` type; a namespace used this way is just a shared,
+/// synced, capability-scoped key/value space, same machinery as every
+/// typed record above, used with no schema at all.
+#[tauri::command]
+async fn write_text(
+    state: State<'_, AppState>,
+    namespace_id: String,
+    key: String,
+    text: String,
+) -> Result<(), String> {
+    let author = ensure_author(&state).await?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    put_text(doc, author, &key, &text)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Reads freeform text back from an exact key.
+#[tauri::command]
+async fn read_text(
+    state: State<'_, AppState>,
+    namespace_id: String,
+    key: String,
+) -> Result<Option<String>, String> {
+    let author = ensure_author(&state).await?;
+    let node = state.node.lock().await;
+    let node = node.as_ref().ok_or("call spawn_node first")?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    get_text(node, doc, author, key.as_str())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Submits text under a fresh, auto-generated key beneath `prefix` — the
+/// public-inbox primitive. Every submitter calls this the same way; no
+/// coordination on keys, no collision, no way to overwrite someone
+/// else's submission (or the namespace owner's own records) — see
+/// `namespace::submit_text`'s doc comment for exactly why that's safe by
+/// construction rather than by convention.
+#[tauri::command]
+async fn submit_to_inbox(
+    state: State<'_, AppState>,
+    namespace_id: String,
+    prefix: String,
+    text: String,
+) -> Result<String, String> {
+    let author = ensure_author(&state).await?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    submit_text(doc, author, &prefix, &text)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 fn main() {
@@ -189,6 +274,9 @@ fn main() {
             join_namespace,
             dump_namespace,
             ticket_to_qr,
+            write_text,
+            read_text,
+            submit_to_inbox,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

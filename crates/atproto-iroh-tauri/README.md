@@ -9,7 +9,7 @@ this is a UI on top of.
 - `src-tauri/` is a genuine Tauri 2 app: `atproto-iroh-core` is a normal
   path dependency, no IPC or FFI boundary between UI-adjacent code and
   protocol logic.
-- Eight commands, each a direct call into the core crate: `spawn_node`
+- Eleven commands, each a direct call into the core crate: `spawn_node`
   (generates a `did:iroh` identity and starts a real `iroh` node —
   deliberately not done at app launch; see `main.rs`'s comment on why),
   `node_did`, `create_namespace_with_profile` (creates a namespace and
@@ -17,32 +17,54 @@ this is a UI on top of.
   (`Node::share`, unwrapped to a plain paste-able ticket string),
   `join_namespace` (`Node::join`, which SPEC.md §6 item 10 confirmed
   backfills full history, not just future writes — a real join),
-  `dump_namespace` (the inspector, below), and `ticket_to_qr` (an SVG QR
-  code of a ticket string, nothing more). `AppState.docs` holds every
-  namespace this node currently has open, so a later command can name
-  one by id without re-deriving it from a ticket each time.
+  `dump_namespace` (the inspector, below), `ticket_to_qr` (an SVG QR
+  code of a ticket string, nothing more), and `write_text`/`read_text`/
+  `submit_to_inbox` (the freeform layer, below). `AppState.docs` holds
+  every namespace this node currently has open, `AppState.author` one
+  record-signing identity reused across every write this session makes
+  (so edits from one person land under one consistent author rather than
+  a new stranger each call).
 - **The inspector** (`namespace::dump_all`, `dist`'s "Inspector"
   section): every raw entry currently synced into a namespace — author,
   key, timestamp, content — with no per-record-type code anywhere in the
   chain. Rust has no runtime reflection, so this isn't literally
   automatic over arbitrary types, but every record this crate writes is
-  JSON, so "try to parse the bytes, fall back to hex" gets the same
-  practical result: one generic view that already covers `NodeProfile`
-  and governance `Proposal`/`Signal` records without having been told
-  about either, and covers whatever gets added next the same way. A
-  debugging view for building against, not a feature end users need.
+  JSON or plain text, so "try JSON, then UTF-8 text, then fall back to
+  hex" gets the same practical result: one generic view that already
+  covers `NodeProfile`, governance `Proposal`/`Signal` records, and
+  freeform `put_text` writes without having been told about any of them,
+  and covers whatever gets added next the same way. A debugging view for
+  building against, not a feature end users need.
+- **Freeform text** (`namespace::put_text`/`get_text`/`submit_text`,
+  `dist`'s "Shared doc" and "Inbox" sections): a namespace doesn't have
+  to hold typed records at all — nothing about `iroh-docs` or this crate
+  requires it. `put_text` writes plain UTF-8 at any key, no lexicon, no
+  `Record` impl — the "Google doc without Google" primitive: shared,
+  synced, capability-scoped text anyone with write access can read and
+  edit. `submit_text` is the same idea specialized for uncoordinated
+  submitters — it mints a fresh key per call (`new_entry_key`, shared
+  with `fold.rs`'s `propose`/`signal`), so any number of strangers can
+  write without colliding or needing to agree on anything first. This is
+  the actual mechanism behind "a public inbox" — see the QR note below
+  for why that's safe.
 - **QR codes** (`ticket_to_qr`): renders a ticket as an SVG QR, nothing
   else — no scanning/camera decode built (see below), no native OS share
   sheet integration (unverified whether Tauri 2 has one; not checked).
-  **A Write ticket is a shared secret with no per-holder revocation**
-  (SPEC.md §6 item 12) — the share form defaults to Read-only and says
-  so plainly; QR generation itself has no guardrail against turning a
-  Write ticket into a code, because the safety judgment belongs with
-  whoever's about to post it somewhere, not silently enforced by this
-  function. Genuinely relevant to SPEC.md §3.6's discovery story: a
-  QR code physically posted somewhere is the same trust shape as a
-  ticket shared in a DM — nothing discoverable until someone already has
-  the capability — just analog instead of digital.
+  No restriction on which access mode gets turned into a code: a `Write`
+  ticket posted publicly is a real, intended pattern here, not a mistake
+  to guard against — a public inbox, a dead drop, a graffiti wall.
+  Mechanically safe by construction, not by policy: `RecordIdentifier`
+  is `(namespace, author, key)` (SPEC.md §3.4's validated finding), so a
+  stranger holding a Write ticket can only ever write under an author
+  *they* generated — they can't forge entries as you or overwrite anyone
+  else's. What a public Write ticket actually needs is volume/moderation
+  handling on the read side (see `mute.rs`, already built, not yet wired
+  to inbox reading) — the real risk is flooding, which §6 item 12 already
+  named as the live case rotation was weighed against, not forgery.
+  Genuinely relevant to SPEC.md §3.6's discovery story either way: a QR
+  code physically posted somewhere is the same trust shape as a ticket
+  shared in a DM — nothing discoverable until someone already has the
+  capability — just analog instead of digital.
 - `dist/` is plain HTML/CSS/JS — no bundler, no `node_modules`, no
   framework. `tauri.conf.json` sets `withGlobalTauri: true` so
   `window.__TAURI__` is injected directly; `main.js` calls `invoke()`

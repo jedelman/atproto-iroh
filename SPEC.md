@@ -792,6 +792,28 @@ lexicons' NSIDs (still `network.essmesh.*`) or otherwise generalize the
 concrete schemas — that's a real open decision (§6), not something to
 silently decide while moving files.
 
+**Confirmed in code, not just in this paragraph.** The general-purpose
+claim above was a prediction about the architecture; `atproto-iroh-core`
+now has a second, non-lexicon-typed write path (`namespace::put_text`)
+sitting right next to `put_record`, using the identical sync and
+capability machinery. Nothing about a namespace requires the four
+ESS lexicons, or any lexicon at all — a namespace is a capability-scoped,
+multi-writer, synced key/value space; typed records are one way to use
+it, freeform shared text is another, and both are live. Realized in
+conversation as "a Google doc without Google," which is a more exact
+description of what this already was than "a cooperative's shared data"
+ever was — the ESS case just happened to be the first one built against
+it. `submit_text` (a variant that mints its own unique key per call) is
+the same primitive specialized for the uncoordinated-submitters case —
+a public inbox, functionally — which composes with a `Write` ticket
+turned into a QR and posted publicly: safe by construction, not by
+policy, since `RecordIdentifier`'s `(namespace, author, key)` shape
+(§3.4) means a stranger can only ever write under an author they
+generated, never forge or overwrite anyone else's entry. The genuine
+residual risk is volume, not forgery — the same resource-attack case §6
+item 12 already named, just with the probability turned up by making the
+ticket public on purpose instead of handing it to people individually.
+
 ## 6. Open questions, ranked by "blocks anything getting built"
 
 1. **Partially answered, first-person, and it's what drove item 4's
