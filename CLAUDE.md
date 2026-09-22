@@ -111,6 +111,16 @@ were two unrelated keys. `spawn_persistent` threads the identity's real
 key into the `Endpoint`, so persisting the identity file now persists
 the thing it claims to.
 
+**At-rest encryption, decided: an env var pointing at an
+already-encrypted volume, not app-level crypto.** `paths::data_dir()`
+(shared by `identity`/`namespace`/`mute`, so it's one setting) checks
+`$ATPROTO_IROH_DATA_DIR` before falling back to the XDG convention —
+point it at a FileVault/BitLocker/LUKS/encrypted-container mount and
+that's the whole feature. Explicit call, not an oversight: "nothing can
+protect someone from themselves" — if the volume's unlocked, so is
+everything on it, same as any other file there, and this crate doesn't
+need to own that security model when the OS already solves it.
+
 **Extension model, decided: PRs to this repo, not a plugin system.**
 Building governance's UI surfaced a real question — should new content
 types (a calendar, a photo board, a chat) be lexicon-based plugins

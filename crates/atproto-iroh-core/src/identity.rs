@@ -10,7 +10,10 @@
 //! in the type system rather than letting the two quietly collapse into
 //! one key used for both jobs.
 
-use std::{fs, io, path::Path};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 use iroh::{PublicKey, SecretKey};
 
@@ -68,6 +71,13 @@ impl Identity {
             fs::create_dir_all(parent)?;
         }
         fs::write(path, self.secret.to_bytes())
+    }
+
+    /// Conventional path — `crate::paths::data_dir`, same convention and
+    /// same `$ATPROTO_IROH_DATA_DIR` override as `mute::MuteList` and
+    /// `namespace::Node::spawn_persistent`'s data directory.
+    pub fn default_path() -> PathBuf {
+        crate::paths::data_dir().join("identity")
     }
 
     pub fn secret_key(&self) -> &SecretKey {

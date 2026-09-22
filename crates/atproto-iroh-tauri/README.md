@@ -98,11 +98,21 @@ this is a UI on top of.
   keys. `spawn_persistent` threads `Identity`'s own key through to the
   `Endpoint`, so persisting the identity file actually persists the
   network identity, not just a label next to a different one each
-  restart. Data lives under `$XDG_DATA_HOME/atproto-iroh` (or
+  restart. Data lives under `atproto_iroh_core::paths::data_dir()`
+  (`$ATPROTO_IROH_DATA_DIR` if set, else `$XDG_DATA_HOME/atproto-iroh` or
   `~/.local/share/atproto-iroh`) — an `identity` file (raw 32-byte
   secret, same protection any other private key file needs, not
   enforced by this code) and a `node/` directory holding the persistent
-  docs and blobs stores. `spawn_node` also repopulates `AppState.docs`
+  docs and blobs stores. **At-rest encryption is the env var, not app
+  code**: point `ATPROTO_IROH_DATA_DIR` at a volume the OS already
+  encrypts (FileVault/BitLocker/LUKS/a mounted encrypted container) —
+  deliberately not this crate's own crypto layer, since it doesn't need
+  to own that security model, and "if the volume's unlocked, everything
+  on it is" was the explicit call made choosing this over app-level
+  encryption. `mute::MuteList::default_path` and
+  `identity::Identity::default_path` honor the same override
+  (`paths.rs`), so one setting covers all of it, not three separately.
+  `spawn_node` also repopulates `AppState.docs`
   from `Node::list_local_namespaces` on every launch, so a restarted app
   can immediately act on namespaces from a previous session. Proven
   live, not just by compiling: `tests/persistence.rs` spawns a node,

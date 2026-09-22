@@ -66,33 +66,25 @@ async fn ensure_author(state: &AppState) -> Result<AuthorId, String> {
     Ok(created)
 }
 
-/// `~/.local/share/atproto-iroh` (or `$XDG_DATA_HOME/atproto-iroh`) —
-/// same convention `mute::MuteList::default_path` already established,
-/// duplicated rather than imported: it's three lines, and pulling in a
-/// real `dirs` crate for one path is what that function's own comment
-/// already argued against.
-fn data_dir() -> std::path::PathBuf {
-    let base = std::env::var_os("XDG_DATA_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share")))
-        .unwrap_or_else(std::env::temp_dir);
-    base.join("atproto-iroh")
-}
-
 /// Spawns the node against real persistent storage and loads (or
 /// generates, on first run) this machine's `did:iroh` identity —
-/// `Identity::load_or_generate`/`Node::spawn_persistent`, both new. Also
-/// repopulates `AppState.docs` from whatever `Node::list_local_namespaces`
-/// finds already on disk, so a restarted app can immediately share,
-/// inspect, or govern namespaces from a previous session without anyone
-/// re-pasting a ticket.
+/// `Identity::load_or_generate`/`Node::spawn_persistent`, both new. Data
+/// lives under `atproto_iroh_core::paths::data_dir()` — `$ATPROTO_IROH_
+/// DATA_DIR` if set, so pointing this at an already-encrypted volume
+/// (FileVault/BitLocker/LUKS/a mounted container) is one environment
+/// variable, not app-level crypto this project doesn't need to own.
+/// Also repopulates `AppState.docs` from whatever
+/// `Node::list_local_namespaces` finds already on disk, so a restarted
+/// app can immediately share, inspect, or govern namespaces from a
+/// previous session without anyone re-pasting a ticket.
 #[tauri::command]
 async fn spawn_node(state: State<'_, AppState>) -> Result<String, String> {
     let did = {
         let mut identity = state.identity.lock().await;
         if identity.is_none() {
-            let path = data_dir().join("identity");
-            *identity = Some(Identity::load_or_generate(path).map_err(|e| e.to_string())?);
+            *identity = Some(
+                Identity::load_or_generate(Identity::default_path()).map_err(|e| e.to_string())?,
+            );
         }
         identity.as_ref().expect("just set").did()
     };
@@ -101,7 +93,7 @@ async fn spawn_node(state: State<'_, AppState>) -> Result<String, String> {
     if node_guard.is_none() {
         let identity = state.identity.lock().await;
         let identity = identity.as_ref().expect("set above");
-        let node = Node::spawn_persistent(identity, data_dir().join("node"))
+        let node = Node::spawn_persistent(identity, atproto_iroh_core::paths::data_dir().join("node"))
             .await
             .map_err(|e| e.to_string())?;
 

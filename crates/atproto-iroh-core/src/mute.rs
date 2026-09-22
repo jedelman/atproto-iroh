@@ -76,20 +76,13 @@ impl<A: Eq + Hash + Clone + Serialize + DeserializeOwned> MuteList<A> {
         fs::write(path, contents)
     }
 
-    /// Conventional per-user local path — not part of the protocol, just
-    /// a sensible default a real client can override.
-    pub fn default_path() -> Option<PathBuf> {
-        dirs_next_data_dir().map(|d| d.join("atproto-iroh").join("mute.json"))
+    /// Conventional per-user local path — `crate::paths::data_dir`, the
+    /// same convention (and the same `$ATPROTO_IROH_DATA_DIR` override)
+    /// `identity::Identity`/`namespace::Node::spawn_persistent` use, so
+    /// pointing everything at one volume is one setting, not three.
+    pub fn default_path() -> PathBuf {
+        crate::paths::data_dir().join("mute.json")
     }
-}
-
-/// Minimal stand-in for the `dirs`/`directories` crate rather than adding
-/// a dependency for one path — real clients should feel free to replace
-/// this with whatever their platform conventions actually are.
-fn dirs_next_data_dir() -> Option<PathBuf> {
-    std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
 }
 
 #[cfg(test)]
