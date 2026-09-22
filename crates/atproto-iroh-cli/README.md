@@ -72,6 +72,14 @@ this machine.
   and reachable until Ctrl+C. Reopens every namespace this identity
   already holds; `--share` additionally prints a fresh ticket for one
   namespace from this same live process before it starts listening.
+- `send <namespace-id> <text> [--reply-to <ref>]` — posts a message
+  (`network.essmesh.chat.message`); the namespace is the channel, no
+  separate room concept. Prints the new message's own
+  `{author_hex}/{rkey}` ref, copy-pasteable into a later `send
+  --reply-to`. Append-only by construction — unlike `write-text`, no
+  last-write-wins risk, since every message gets its own key.
+- `messages <namespace-id>` — every message, oldest first, each line
+  prefixed with its own ref.
 
 ## Identity and storage
 

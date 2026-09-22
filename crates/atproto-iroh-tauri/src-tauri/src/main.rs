@@ -16,6 +16,7 @@ use atproto_iroh_core::{
         Signal, SignalType,
     },
     identity::Identity,
+    messaging,
     namespace::{
         decode_author_hex, dump_all, list_document_revisions, load_document, put_record,
         save_document_revision, submit_text, NetworkPreset, Node, RawEntry,
@@ -407,6 +408,71 @@ async fn submit_to_inbox(
         .map_err(|e| e.to_string())
 }
 
+/// Posts a message into a namespace — `messaging::send_message`
+/// unwrapped for the UI. The namespace itself is the channel; there's no
+/// separate room concept. `reply_to_hex`/`reply_to_rkey` are optional and
+/// together build the `reply_to` reference (`messaging::reply_ref`) —
+/// exposed as two plain strings rather than asking the frontend to know
+/// the "{authorHex}/{rkey}" convention itself.
+#[tauri::command]
+async fn send_message(
+    state: State<'_, AppState>,
+    namespace_id: String,
+    text: String,
+    reply_to_author_hex: Option<String>,
+    reply_to_rkey: Option<String>,
+) -> Result<String, String> {
+    let author = ensure_author(&state).await?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    let reply_to = match (reply_to_author_hex, reply_to_rkey) {
+        (Some(author_hex), Some(rkey)) => Some(messaging::reply_ref(&author_hex, &rkey)),
+        _ => None,
+    };
+    messaging::send_message(doc, author, text, reply_to)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+struct MessageView {
+    author_hex: String,
+    rkey: String,
+    text: String,
+    reply_to: Option<String>,
+    created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Every message in a namespace, oldest first — `messaging::list_messages`
+/// unwrapped for the UI.
+#[tauri::command]
+async fn list_messages(
+    state: State<'_, AppState>,
+    namespace_id: String,
+) -> Result<Vec<MessageView>, String> {
+    let node = state.node.lock().await;
+    let node = node.as_ref().ok_or("call spawn_node first")?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    let messages = messaging::list_messages(node, doc)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(messages
+        .into_iter()
+        .map(|(author, rkey, message)| MessageView {
+            author_hex: hex::encode(author.as_bytes()),
+            rkey,
+            text: message.text,
+            reply_to: message.reply_to,
+            created_at: message.created_at,
+        })
+        .collect())
+}
+
 #[derive(serde::Serialize)]
 struct ProposalView {
     author_hex: String,
@@ -597,6 +663,8 @@ fn main() {
             doc_load,
             doc_history,
             submit_to_inbox,
+            send_message,
+            list_messages,
             list_proposals,
             governance_state,
             create_proposal,

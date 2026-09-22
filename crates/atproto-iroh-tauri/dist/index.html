@@ -135,6 +135,39 @@
       </section>
 
       <section>
+        <h2>Messages</h2>
+        <p class="hint">
+          A namespace is the channel — no separate room concept. Each
+          message gets its own auto-generated key (same collision-free
+          pattern the Inbox below uses), so this needs no revision-history
+          treatment the way Shared doc did: nobody's overwriting anybody
+          else's message.
+        </p>
+        <form id="send-message">
+          <label>
+            Namespace id
+            <input id="msg-namespace-id" type="text" required />
+          </label>
+          <label>
+            Message
+            <textarea id="msg-text" rows="3" required></textarea>
+          </label>
+          <label>
+            Reply to (author hex, optional)
+            <input id="msg-reply-author" type="text" />
+          </label>
+          <label>
+            Reply to (rkey, optional)
+            <input id="msg-reply-rkey" type="text" />
+          </label>
+          <button type="submit">Send</button>
+          <button type="button" id="msg-refresh">Refresh</button>
+        </form>
+        <p id="msg-status" class="value">—</p>
+        <ul id="msg-out"></ul>
+      </section>
+
+      <section>
         <h2>Inbox</h2>
         <p class="hint">
           Submit under a fresh, auto-generated key — no coordination
@@ -171,11 +204,10 @@
           Proposal ratifies by default once its deadline passes unless
           enough <code>block</code> Signals land first. <code>consent</code>
           is recorded but carries no mechanical power. Eligibility and
-          policy here are computed with a placeholder starting policy and
-          a heuristic "who's self-asserted governance-eligible" founder
-          set — see <code>list_proposals</code>'s doc comment in
-          <code>main.rs</code>; a real founding-record mechanism doesn't
-          exist yet (SPEC.md §6 item 12).
+          policy come from a real <code>Founding</code> claim posted at
+          namespace creation (SPEC.md §6 item 16) — this app always
+          founds a namespace as its sole genesis member; admitting anyone
+          else goes through a real Proposal below.
         </p>
         <form id="load-governance">
           <label>

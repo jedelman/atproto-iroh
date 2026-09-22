@@ -10,6 +10,8 @@
 //!   (§3.7.2/§3.7.3/§3.9), pure/no I/O by design
 //! - [`fold`] — the I/O layer wiring `governance` to `namespace`: reads a
 //!   namespace's governance collection and folds it into current state
+//! - [`messaging`] — `network.essmesh.chat.message` (batteries-included
+//!   app list, CLAUDE.md), append-only, no new sync primitive needed
 //! - [`mute`] — local, unsynced per-reader mute (§6 item 12)
 //! - [`paths`] — the shared, overridable local-data-directory convention
 //!   `identity`/`namespace`/`mute` all persist under
@@ -17,6 +19,7 @@
 pub mod fold;
 pub mod governance;
 pub mod identity;
+pub mod messaging;
 pub mod mute;
 pub mod namespace;
 pub mod paths;

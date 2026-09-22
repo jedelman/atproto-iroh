@@ -22,6 +22,7 @@ use anyhow::{Context, Result};
 use atproto_iroh_core::{
     fold,
     governance::{FoundingPolicy, PolicyValue},
+    messaging,
     namespace::{
         dump_all, get_text, list_document_revisions, load_document, put_text,
         save_document_revision, Node,
@@ -129,6 +130,18 @@ enum Command {
         #[arg(long, value_enum, default_value = "write")]
         mode: Mode,
     },
+    /// Send a message into a namespace — the namespace is the channel,
+    /// no separate room concept. `--reply-to` takes
+    /// "{author_hex}/{rkey}" (as printed by `messages`) to reply to an
+    /// existing message.
+    Send {
+        namespace_id: String,
+        text: String,
+        #[arg(long)]
+        reply_to: Option<String>,
+    },
+    /// Every message in a namespace, oldest first.
+    Messages { namespace_id: String },
 }
 
 #[derive(Clone, clap::ValueEnum)]
@@ -256,6 +269,26 @@ async fn run(
             let revisions = list_document_revisions(node, &doc, doc_id).await?;
             for (author, rev, text) in revisions {
                 println!("{rev} {} {text}", hex::encode(author.as_bytes()));
+            }
+        }
+        Command::Send { namespace_id, text, reply_to } => {
+            let doc = open(node, namespace_id).await?;
+            let rkey = messaging::send_message(&doc, author, text.clone(), reply_to.clone()).await?;
+            println!("{}/{rkey}", hex::encode(author.as_bytes()));
+        }
+        Command::Messages { namespace_id } => {
+            let doc = open(node, namespace_id).await?;
+            let messages = messaging::list_messages(node, &doc).await?;
+            for (msg_author, rkey, message) in messages {
+                let author_hex = hex::encode(msg_author.as_bytes());
+                let reply_note = message
+                    .reply_to
+                    .map(|r| format!(" (reply to {r})"))
+                    .unwrap_or_default();
+                // First field is this message's own ref
+                // ("{author_hex}/{rkey}"), copy-pasteable straight into
+                // `send --reply-to`.
+                println!("{author_hex}/{rkey}  {author_hex}: {}{reply_note}", message.text);
             }
         }
         Command::Serve { share, mode } => {

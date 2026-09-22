@@ -180,6 +180,55 @@ document.getElementById("doc-history-btn").addEventListener("click", async () =>
   }
 });
 
+// --- Messages ------------------------------------------------------
+
+const msgStatusEl = document.getElementById("msg-status");
+const msgOutEl = document.getElementById("msg-out");
+
+async function refreshMessages() {
+  const namespaceId = document.getElementById("msg-namespace-id").value;
+  msgOutEl.textContent = "";
+  try {
+    const messages = await invoke("list_messages", { namespaceId });
+    if (messages.length === 0) {
+      msgOutEl.textContent = "(no messages yet)";
+      return;
+    }
+    for (const m of messages) {
+      const li = document.createElement("li");
+      const replyNote = m.reply_to ? ` (reply to ${m.reply_to})` : "";
+      li.textContent = `${m.author_hex.slice(0, 8)}…: ${m.text}${replyNote}`;
+      msgOutEl.appendChild(li);
+    }
+  } catch (err) {
+    msgOutEl.textContent = `error: ${err}`;
+  }
+}
+
+document.getElementById("send-message").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const namespaceId = document.getElementById("msg-namespace-id").value;
+  const text = document.getElementById("msg-text").value;
+  const replyToAuthorHex = document.getElementById("msg-reply-author").value || null;
+  const replyToRkey = document.getElementById("msg-reply-rkey").value || null;
+  msgStatusEl.textContent = "sending…";
+  try {
+    const rkey = await invoke("send_message", {
+      namespaceId,
+      text,
+      replyToAuthorHex,
+      replyToRkey,
+    });
+    msgStatusEl.textContent = `sent ${rkey}`;
+    document.getElementById("msg-text").value = "";
+    await refreshMessages();
+  } catch (err) {
+    msgStatusEl.textContent = `error: ${err}`;
+  }
+});
+
+document.getElementById("msg-refresh").addEventListener("click", refreshMessages);
+
 // --- Inbox ---------------------------------------------------------
 
 const inboxStatusEl = document.getElementById("inbox-status");

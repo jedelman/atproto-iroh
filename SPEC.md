@@ -1109,3 +1109,21 @@ both revisions, not just whichever synced last.
     `list_proposals`/`governance_state` now call `fold_namespace`) and
     the CLI (`create-namespace`) call the real path now, not the
     heuristic.
+17. **Resolved (2026-09-22): mint our own lexicons, don't reuse
+    Bluesky's real NSIDs.** Jason asked directly whether reusing
+    `app.bsky.*` schemas (post/reply/embed shapes are mature, well
+    thought through) would be confusing or advantageous. Answer: reusing
+    the actual NSIDs would be actively misleading, not just a style
+    choice — a record stamped `app.bsky.feed.post` implies it's
+    resolvable via the public firehose/AppView, and this design's whole
+    point (goal 1, zero ambient legibility) is that it isn't. Same
+    schema shape, incompatible promise about how the record can be
+    found and read. What's still advantageous, and not in conflict with
+    that: structurally *borrowing* proven Bluesky field shapes
+    (post/reply/embed for the messaging/documents apps on §6's earlier
+    batteries-included list) under this project's own NSIDs, since
+    reinventing those shapes from scratch would be wasted effort for no
+    benefit. If the Phase 2 bridge (item 14 above) ever ships, mapping
+    essmesh-shaped records to real `app.bsky.*` ones at that boundary is
+    a small, honest translation step, not something squatting on the
+    name now would have skipped usefully.

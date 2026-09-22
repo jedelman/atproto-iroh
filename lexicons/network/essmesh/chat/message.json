@@ -1,0 +1,30 @@
+{
+  "lexicon": 1,
+  "id": "network.essmesh.chat.message",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A message posted into a namespace. There is no separate channel or room concept -- the namespace a message is written into IS the channel, same as every other record type in this design uses the namespace itself as the scoping unit rather than layering a second structure on top. Append-only by construction: every message gets its own key (minted by the writer, not coordinated with anyone else), so any number of members can post without colliding -- the same shape network.essmesh.governance.proposal/signal and the freeform inbox primitive already use, and the reason this was the first of the batteries-included apps built (ESS_MESH_SPEC.md's app-list section): it needed no new sync primitive at all.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["text", "createdAt"],
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 3000,
+            "maxGraphemes": 1000
+          },
+          "replyTo": {
+            "type": "string",
+            "description": "Stand-in for com.atproto.repo.strongRef until real record referencing exists (same convention network.essmesh.governance.signal's subject field uses) -- '{authorHex}/{rkey}' naming the message this one replies to. Optional; a message with no replyTo is a new top-of-thread message."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

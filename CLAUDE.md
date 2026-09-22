@@ -258,7 +258,7 @@ improvise once a real SDK/NDK is present. Worth pressure-testing for
 real once that's run somewhere with the disk for it, not assumed clean
 from the code alone.
 
-## Batteries-included app list (recommendation, not yet built)
+## Batteries-included app list (Messaging built; rest still a recommendation)
 
 Jason's ask (2026-09-22): for a non-technical/tech-hostile user base,
 what should ship by default rather than being left to a future PR?
@@ -278,10 +278,22 @@ question for each, not a UI detail:
 
 Recommended list, each tagged with its pattern:
 
-- **Messaging** — append-only by nature (a chat is already a sequence of
-  independent messages, one key per message, same shape `submit_text`
-  already proves out). The natural first app to build, since it needs no
-  new primitive at all.
+- **Messaging — built (2026-09-22).** `crates/atproto-iroh-core/src/
+  messaging.rs`: `Message` (`network.essmesh.chat.message`,
+  `lexicons/network/essmesh/chat/message.json`), `send_message`/
+  `list_messages`. A namespace is the channel — no separate room
+  concept layered on top, same "the namespace already is the scoping
+  unit" theme as everything else here. Append-only by nature (a chat is
+  already a sequence of independent messages, one key per message, same
+  shape `submit_text` already proved out), so it needed no new sync
+  primitive — confirmed, not just claimed: proven live in
+  `crates/atproto-iroh-core/tests/messaging.rs` (two nodes exchange a
+  message and a reply, both see the full thread in order after sync).
+  Wired into both clients: Tauri's `send_message`/`list_messages`
+  commands and `dist`'s "Messages" section, and the CLI's `send`/
+  `messages` subcommands (`send` prints the new message's own
+  `{author_hex}/{rkey}` ref, copy-pasteable straight into a later
+  `send --reply-to`).
 - **Documents** — shared mutable state; this is exactly what
   `save_document_revision`/`list_document_revisions`/`load_document`
   (just built) are for. Needs real UI on top: showing "someone else

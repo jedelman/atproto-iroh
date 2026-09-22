@@ -22,7 +22,8 @@ this is a UI on top of.
   10 confirmed backfills full history, not just future writes — a real
   join), `dump_namespace` (the inspector, below), `ticket_to_qr` (an SVG
   QR code of a ticket string, nothing more), `doc_save`/`doc_load`/
-  `doc_history`/`submit_to_inbox` (the freeform layer, below), and
+  `doc_history`/`submit_to_inbox` (the freeform layer, below),
+  `send_message`/`list_messages` (Messaging, below), and
   `list_proposals`/`governance_state`/`create_proposal`/`create_signal`
   (governance, below). `AppState.docs` holds every namespace this node
   currently has open — repopulated from disk on every `spawn_node` call
@@ -64,6 +65,20 @@ this is a UI on top of.
   exactly why it didn't need the same CRDT fix the Shared doc primitive
   did. This is the actual mechanism behind "a public inbox" — see the QR
   note below for why that's safe.
+- **Messaging** (`messaging::send_message`/`list_messages`, `dist`'s
+  "Messages" section): CLAUDE.md's batteries-included app list's first
+  build, and the one it predicted would need no new primitive — a
+  namespace is the channel, each message mints its own key
+  (`new_entry_key`, same generator `submit_text`/`fold::propose`/
+  `fold::signal` already share), so there's no collision or
+  last-write-wins risk the way the old `put_text`-backed Shared doc had.
+  `list_messages` sorts by key (the same "sort by the sortable key, not
+  a separately tracked index" approach `list_document_revisions` uses)
+  since `list_records` itself makes no ordering promise. `reply_to` is a
+  plain `"{author_hex}/{rkey}"` string, same convention
+  `governance::subject_ref` uses for `Signal.subject` — restated locally
+  in `messaging.rs` rather than sharing one function across two
+  unrelated modules for a one-line format.
 - **QR codes** (`ticket_to_qr`): renders a ticket as an SVG QR, nothing
   else — no scanning/camera decode built (see below), no native OS share
   sheet integration (unverified whether Tauri 2 has one; not checked).
