@@ -16,6 +16,7 @@ use atproto_iroh_core::{
         Signal, SignalType,
     },
     identity::Identity,
+    images,
     messaging,
     mute::MuteList,
     namespace::{
@@ -582,6 +583,95 @@ async fn list_messages(
         .collect())
 }
 
+/// Uploads an image — `images::upload_image` unwrapped for the UI.
+/// `bytes` comes across the Tauri IPC boundary as a plain JSON array of
+/// numbers (Tauri's `invoke` JSON-serializes command arguments; there's
+/// no separate binary-transfer path in this reference app), fine for a
+/// reference client at reasonable image sizes, not tuned for large
+/// files — the frontend reads a file into memory with `FileReader`
+/// either way, so this app was never going to stream large uploads
+/// regardless of the wire format.
+#[tauri::command]
+async fn upload_image(
+    state: State<'_, AppState>,
+    namespace_id: String,
+    bytes: Vec<u8>,
+    content_type: String,
+    caption: Option<String>,
+) -> Result<String, String> {
+    let author = ensure_author(&state).await?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    images::upload_image(doc, author, bytes, content_type, caption)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+struct ImageView {
+    author_hex: String,
+    rkey: String,
+    content_type: String,
+    len: u64,
+    caption: Option<String>,
+    created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Every image's metadata in a namespace — `images::list_images`
+/// unwrapped for the UI. Never downloads image bytes; see
+/// `load_image_bytes` below for that.
+#[tauri::command]
+async fn list_images(
+    state: State<'_, AppState>,
+    namespace_id: String,
+) -> Result<Vec<ImageView>, String> {
+    let node = state.node.lock().await;
+    let node = node.as_ref().ok_or("call spawn_node first")?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    let images = images::list_images(node, doc)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(images
+        .into_iter()
+        .map(|(author, rkey, meta)| ImageView {
+            author_hex: hex::encode(author.as_bytes()),
+            rkey,
+            content_type: meta.content_type,
+            len: meta.len,
+            caption: meta.caption,
+            created_at: meta.created_at,
+        })
+        .collect())
+}
+
+/// One image's raw bytes — `images::load_image_bytes` unwrapped for the
+/// UI, returned as a plain byte array for the frontend to base64-encode
+/// into a data URL itself.
+#[tauri::command]
+async fn load_image_bytes(
+    state: State<'_, AppState>,
+    namespace_id: String,
+    author_hex: String,
+    rkey: String,
+) -> Result<Option<Vec<u8>>, String> {
+    let author = decode_author_hex(&author_hex).ok_or("invalid author id")?;
+    let node = state.node.lock().await;
+    let node = node.as_ref().ok_or("call spawn_node first")?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    let bytes = images::load_image_bytes(node, doc, author, &rkey)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(bytes.map(|b| b.to_vec()))
+}
+
 /// Mutes an author's content in this reader's own client — local only,
 /// no sync, no lexicon; see `mute::MuteList`'s doc comment for why this
 /// carries no protocol surface at all. Takes a hex-encoded author id
@@ -868,6 +958,9 @@ fn main() {
             submit_to_inbox,
             send_message,
             list_messages,
+            upload_image,
+            list_images,
+            load_image_bytes,
             update_profile,
             list_profiles,
             mute_author,

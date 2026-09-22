@@ -375,6 +375,89 @@ document.getElementById("tag-load-btn").addEventListener("click", async () => {
   }
 });
 
+// --- Images ------------------------------------------------------------
+
+const imgStatusEl = document.getElementById("img-status");
+const imgGalleryEl = document.getElementById("img-gallery");
+
+document.getElementById("upload-image").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const namespaceId = document.getElementById("img-namespace-id").value;
+  const fileInput = document.getElementById("img-file");
+  const caption = document.getElementById("img-caption").value || null;
+  const file = fileInput.files[0];
+  if (!file) {
+    imgStatusEl.textContent = "pick a file first";
+    return;
+  }
+  imgStatusEl.textContent = "uploading…";
+  try {
+    const buffer = await file.arrayBuffer();
+    const bytes = Array.from(new Uint8Array(buffer));
+    const rkey = await invoke("upload_image", {
+      namespaceId,
+      bytes,
+      contentType: file.type || "application/octet-stream",
+      caption,
+    });
+    imgStatusEl.textContent = `uploaded ${rkey}`;
+    fileInput.value = "";
+    document.getElementById("img-caption").value = "";
+    await refreshImages();
+  } catch (err) {
+    imgStatusEl.textContent = `error: ${err}`;
+  }
+});
+
+async function refreshImages() {
+  const namespaceId = document.getElementById("img-namespace-id").value;
+  imgGalleryEl.innerHTML = "";
+  try {
+    const images = await invoke("list_images", { namespaceId });
+    if (images.length === 0) {
+      imgGalleryEl.textContent = "(no images yet)";
+      return;
+    }
+    for (const meta of images) {
+      const figure = document.createElement("figure");
+      const img = document.createElement("img");
+      img.style.maxWidth = "240px";
+      img.alt = meta.caption || meta.rkey;
+      loadAndRenderImage(namespaceId, meta, img);
+      figure.appendChild(img);
+      const caption = document.createElement("figcaption");
+      caption.textContent = `${meta.caption || "(no caption)"} — ${meta.author_hex.slice(0, 8)}…, ${meta.len} bytes`;
+      figure.appendChild(caption);
+      imgGalleryEl.appendChild(figure);
+    }
+  } catch (err) {
+    imgGalleryEl.textContent = `error: ${err}`;
+  }
+}
+
+// Bytes come back over IPC as a plain JSON array of numbers, same as
+// they went up — built into an object URL via a Blob rather than a
+// base64 data URL, so no manual encoding is needed on this side either.
+async function loadAndRenderImage(namespaceId, meta, imgEl) {
+  try {
+    const bytes = await invoke("load_image_bytes", {
+      namespaceId,
+      authorHex: meta.author_hex,
+      rkey: meta.rkey,
+    });
+    if (bytes === null) {
+      imgEl.alt = "(bytes not synced yet — try Refresh)";
+      return;
+    }
+    const blob = new Blob([new Uint8Array(bytes)], { type: meta.content_type });
+    imgEl.src = URL.createObjectURL(blob);
+  } catch (err) {
+    imgEl.alt = `error: ${err}`;
+  }
+}
+
+document.getElementById("img-refresh").addEventListener("click", refreshImages);
+
 // --- Inbox ---------------------------------------------------------
 
 const inboxStatusEl = document.getElementById("inbox-status");

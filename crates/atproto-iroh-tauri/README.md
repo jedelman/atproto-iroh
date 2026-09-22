@@ -9,10 +9,10 @@ this is a UI on top of.
 - `src-tauri/` is a genuine Tauri 2 app: `atproto-iroh-core` is a normal
   path dependency, no IPC or FFI boundary between UI-adjacent code and
   protocol logic.
-- Sixteen commands, each a direct call into the core crate: `spawn_node`
-  (loads or generates a persistent `did:iroh` identity and starts a real
-  `iroh` node against real on-disk storage — deliberately not done at
-  app launch; see `main.rs`'s comment on why), `node_did`,
+- Twenty-eight commands, each a direct call into the core crate:
+  `spawn_node` (loads or generates a persistent `did:iroh` identity and
+  starts a real `iroh` node against real on-disk storage — deliberately
+  not done at app launch; see `main.rs`'s comment on why), `node_did`,
   `create_namespace_with_profile` (creates a namespace, publishes a
   `NodeProfile` into it, **and posts this author's real `Founding` claim**
   — `fold::found_namespace`, replacing what used to be a placeholder
@@ -23,7 +23,11 @@ this is a UI on top of.
   join), `dump_namespace` (the inspector, below), `ticket_to_qr` (an SVG
   QR code of a ticket string, nothing more), `doc_save`/`doc_load`/
   `doc_history`/`submit_to_inbox` (the freeform layer, below),
-  `send_message`/`list_messages` (Messaging, below), and
+  `send_message`/`list_messages` (Messaging, below),
+  `upload_image`/`list_images`/`load_image_bytes` (Images, below),
+  `update_profile`/`list_profiles` (Members/Profile, below),
+  `mute_author`/`unmute_author`/`list_muted` (Mute, below),
+  `add_tag`/`tags_for` (Tags, below), and
   `list_proposals`/`governance_state`/`create_proposal`/`create_signal`
   (governance, below). `AppState.docs` holds every namespace this node
   currently has open — repopulated from disk on every `spawn_node` call
@@ -89,6 +93,15 @@ this is a UI on top of.
   Messages section gets a "Tag" button that fills in this panel's
   subject field with that exact message's `record_ref` — no manual
   copy-pasting required for the common case.
+- **Images** (`images::upload_image`/`list_images`/`load_image_bytes`,
+  `dist`'s "Images" section): a file `<input>`, `file.arrayBuffer()` →
+  `Array.from(new Uint8Array(...))` → `upload_image`, bytes crossing the
+  Tauri IPC boundary as a plain JSON array (fine at reference-app scale,
+  not a streaming upload path). No separate blob-fetch step on the read
+  side either — `images::load_image_bytes` returns the same bytes
+  `iroh-docs` already synced as the entry's content, rendered via
+  `URL.createObjectURL(new Blob([...]))` rather than a base64 data URL,
+  so no manual encoding on either side of the wire.
 - **Members / Profile** (`update_profile`/`list_profiles`, `dist`'s
   "Members" section): `NodeProfile` editing separated from namespace
   creation — `create_namespace_with_profile` still sets an initial

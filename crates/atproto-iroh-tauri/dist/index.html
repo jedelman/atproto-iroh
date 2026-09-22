@@ -261,6 +261,35 @@
       </section>
 
       <section>
+        <h2>Images</h2>
+        <p class="hint">
+          Uploaded as an ordinary namespace entry (`namespace::put_bytes`),
+          not through a separate blob-fetch API — the same sync
+          mechanism every other record here already relies on transfers
+          the image bytes alongside their metadata. No thumbnailing;
+          full images render inline.
+        </p>
+        <form id="upload-image">
+          <label>
+            Namespace id
+            <input id="img-namespace-id" type="text" required />
+          </label>
+          <label>
+            File
+            <input id="img-file" type="file" accept="image/*" required />
+          </label>
+          <label>
+            Caption
+            <input id="img-caption" type="text" />
+          </label>
+          <button type="submit">Upload</button>
+          <button type="button" id="img-refresh">Refresh</button>
+        </form>
+        <p id="img-status" class="value">—</p>
+        <div id="img-gallery"></div>
+      </section>
+
+      <section>
         <h2>Inbox</h2>
         <p class="hint">
           Submit under a fresh, auto-generated key — no coordination

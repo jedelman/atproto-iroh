@@ -287,6 +287,41 @@ pub async fn get_text(
     Ok(Some(String::from_utf8(bytes.to_vec())?))
 }
 
+/// Writes arbitrary bytes at a caller-chosen key — `put_text` without
+/// the UTF-8 requirement. Exists for `images.rs`: an image's raw bytes
+/// aren't text, but they're still just content at a key, same sync and
+/// capability machinery as everything else. Deliberately *not* using
+/// `iroh_blobs`' own out-of-band blob-add API (`Store::add_bytes`,
+/// which mints a hash a peer would then have to separately fetch by
+/// dialing for it) — writing through `Doc::set_bytes` instead means the
+/// bytes are a doc entry's content, which `iroh-docs` already syncs
+/// alongside the entry metadata by the same mechanism every other
+/// record in this crate relies on (the same content-lags-metadata
+/// caveat `get_record`'s doc comment already documents, nothing new).
+/// One primitive, not two.
+pub async fn put_bytes(
+    doc: &Doc,
+    author: AuthorId,
+    key: &str,
+    bytes: Vec<u8>,
+) -> Result<iroh_blobs::Hash> {
+    Ok(doc.set_bytes(author, key.as_bytes().to_vec(), bytes).await?)
+}
+
+/// Reads raw bytes back from an exact key — `get_text` without the
+/// UTF-8 decode.
+pub async fn get_bytes(
+    node: &Node,
+    doc: &Doc,
+    author: AuthorId,
+    key: &str,
+) -> Result<Option<bytes::Bytes>> {
+    let Some(entry) = doc.get_exact(author, key.as_bytes().to_vec(), false).await? else {
+        return Ok(None);
+    };
+    Ok(Some(node.blob_store().get_bytes(entry.content_hash()).await?))
+}
+
 /// Submits text under a fresh, auto-generated key beneath `prefix` —
 /// the "public inbox" primitive: any number of strangers holding a write
 /// ticket can each call this without coordinating on a key, because

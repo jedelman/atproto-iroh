@@ -93,6 +93,15 @@ this machine.
   identity is a different `did:iroh` from the Tauri app's, so its mute
   preferences shouldn't silently share a file with a different
   identity's.
+- `upload-image <namespace-id> <path> [--content-type <type>] [--caption <text>]`
+  — reads a local file and uploads its bytes as `network.essmesh.chat.image`.
+  No separate blob-fetch step, same as the Tauri shell's Images section —
+  see `images.rs`'s own doc comment for why.
+- `images <namespace-id>` — every image's metadata, oldest first.
+- `download-image <namespace-id> <author-hex> <rkey> <out-path>` —
+  writes one image's bytes to a local file. Verified as a real
+  byte-for-byte round trip (upload a file, download it back, `diff`
+  clean), not just "the types line up."
 
 ## Identity and storage
 

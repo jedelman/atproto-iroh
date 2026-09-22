@@ -300,10 +300,30 @@ Recommended list, each tagged with its pattern:
   edited this while you were offline" and a merge/pick step, not just
   silently picking the latest revision the way `load_document`'s default
   does.
-- **Images** — append-only (each upload is its own blob + one metadata
-  entry referencing it via `iroh-blobs`' content addressing); no new
-  sync primitive needed, but real work in surfacing/thumbnailing that
-  this repo hasn't touched.
+- **Images — built (2026-09-22).** `crates/atproto-iroh-core/src/
+  images.rs`: `ImageMeta` (`network.essmesh.chat.image`,
+  `lexicons/network/essmesh/chat/image.json`), `upload_image`/
+  `list_images`/`load_image_bytes`. Confirmed the prediction ("no new
+  sync primitive needed") more precisely than expected: rather than
+  `iroh-blobs`' own out-of-band blob-add API (which would mint a hash a
+  peer then has to separately dial for), images go through the new
+  `namespace::put_bytes`/`get_bytes` — `put_text` generalized past the
+  UTF-8 requirement — so an image's bytes are an ordinary doc entry's
+  content, synced by the exact same mechanism every other record here
+  already relies on. Proven live in `crates/atproto-iroh-core/tests/
+  images.rs`: upload on one node, join from a second node *after* the
+  upload, both the metadata and the raw bytes sync with no separate
+  fetch step, byte-for-byte identical on the other side. Metadata and
+  bytes are two entries sharing one `rkey` (not one record with embedded
+  bytes) specifically so listing a gallery never means downloading every
+  image in it first. Wired into both clients: Tauri's `upload_image`/
+  `list_images`/`load_image_bytes` commands (a file `<input>` + gallery
+  in `dist`'s new "Images" section, bytes crossing the Tauri IPC
+  boundary as a plain JSON byte array — fine for a reference client, not
+  tuned for large files) and the CLI's `upload-image`/`images`/
+  `download-image` subcommands, verified with a real byte-for-byte round
+  trip through a local file. Not built: thumbnailing, image format
+  validation, or any size limit.
 - **Tagging — built (2026-09-22), and cross-lexicon by construction**
   (Jason's explicit requirement). `crates/atproto-iroh-core/src/
   tagging.rs`: `Tag` (`network.essmesh.tag`,

@@ -22,7 +22,7 @@ use anyhow::{Context, Result};
 use atproto_iroh_core::{
     fold,
     governance::{FoundingPolicy, PolicyValue},
-    messaging,
+    images, messaging,
     mute::MuteList,
     namespace::{
         decode_author_hex, dump_all, get_text, list_document_revisions, load_document, put_text,
@@ -163,6 +163,26 @@ enum Command {
     Unmute { author_hex: String },
     /// Every currently-muted author.
     Muted,
+    /// Uploads a local file as an image — bytes sync as an ordinary
+    /// namespace entry (`namespace::put_bytes`), not through a separate
+    /// blob-fetch step.
+    UploadImage {
+        namespace_id: String,
+        path: std::path::PathBuf,
+        #[arg(long, default_value = "application/octet-stream")]
+        content_type: String,
+        #[arg(long)]
+        caption: Option<String>,
+    },
+    /// Every image's metadata in a namespace, oldest first.
+    Images { namespace_id: String },
+    /// Downloads one image's bytes to a local file.
+    DownloadImage {
+        namespace_id: String,
+        author_hex: String,
+        rkey: String,
+        out_path: std::path::PathBuf,
+    },
 }
 
 #[derive(Clone, clap::ValueEnum)]
@@ -343,6 +363,39 @@ async fn run(
             let list: MuteList<iroh_docs::AuthorId> = MuteList::load(mute_path())?;
             for author in list.iter() {
                 println!("{}", hex::encode(author.as_bytes()));
+            }
+        }
+        Command::UploadImage { namespace_id, path, content_type, caption } => {
+            let doc = open(node, namespace_id).await?;
+            let bytes = std::fs::read(path)
+                .with_context(|| format!("reading {}", path.display()))?;
+            let rkey = images::upload_image(&doc, author, bytes, content_type.clone(), caption.clone())
+                .await?;
+            println!("{rkey}");
+        }
+        Command::Images { namespace_id } => {
+            let doc = open(node, namespace_id).await?;
+            let list = images::list_images(node, &doc).await?;
+            for (img_author, rkey, meta) in list {
+                let caption = meta.caption.as_deref().unwrap_or("(no caption)");
+                println!(
+                    "{}/{rkey}  {} bytes, {}  {caption}",
+                    hex::encode(img_author.as_bytes()),
+                    meta.len,
+                    meta.content_type
+                );
+            }
+        }
+        Command::DownloadImage { namespace_id, author_hex, rkey, out_path } => {
+            let doc = open(node, namespace_id).await?;
+            let img_author = decode_author_hex(author_hex).context("invalid author id")?;
+            match images::load_image_bytes(node, &doc, img_author, rkey).await? {
+                Some(bytes) => {
+                    std::fs::write(out_path, &bytes)
+                        .with_context(|| format!("writing {}", out_path.display()))?;
+                    println!("wrote {} bytes to {}", bytes.len(), out_path.display());
+                }
+                None => eprintln!("(image bytes not found — not synced yet, or wrong ref)"),
             }
         }
         Command::Serve { share, mode } => {
