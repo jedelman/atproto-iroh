@@ -9,19 +9,58 @@
 
 use std::collections::HashMap;
 
-use std::collections::HashSet;
-
 use atproto_iroh_core::{
     fold::{self, GovernanceState},
-    governance::{GovernanceClass, PolicyChange, PolicyValue, Proposal, Ratification, Signal, SignalType},
+    governance::{
+        FoundingPolicy, GovernanceClass, PolicyChange, PolicyValue, Proposal, Ratification,
+        Signal, SignalType,
+    },
     identity::Identity,
-    namespace::{decode_author_hex, dump_all, get_text, list_records, put_record, put_text, submit_text, Node, RawEntry},
+    namespace::{
+        decode_author_hex, dump_all, list_document_revisions, load_document, put_record,
+        save_document_revision, submit_text, NetworkPreset, Node, RawEntry,
+    },
     records::{NodeCategory, NodeProfile},
 };
 use chrono::Duration as ChronoDuration;
 use iroh_docs::{api::protocol::ShareMode, api::Doc, AuthorId, DocTicket};
+#[cfg(any(target_os = "android", target_os = "ios"))]
+use tauri::Manager;
 use tauri::State;
 use tokio::sync::Mutex;
+
+/// Android and iOS have no shell environment for `paths::data_dir()`'s
+/// env-var convention to read — Android gives each app a fixed
+/// per-app-private directory instead, reachable only through Tauri's own
+/// path resolver. Called once from `main()`'s `.setup()` hook, before any
+/// command can run, so every later `paths::data_dir()` call (identity,
+/// namespace storage, mute list) resolves to a real, writable, already
+/// sandboxed-and-private location instead of whatever `$HOME` happens to
+/// mean inside an Android process (usually nothing usable). Desktop
+/// builds don't need this — the env var convention already covers them —
+/// which is why this is behind the same `cfg` `spawn_node`'s preset
+/// choice below uses.
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn install_mobile_data_dir(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let dir = app.path().app_data_dir()?;
+    atproto_iroh_core::paths::set_data_dir_override(dir);
+    Ok(())
+}
+
+/// Which `NetworkPreset` `spawn_node` binds with — `N0` (relay fallback,
+/// DNS address lookup) on mobile, where CGNAT and network-switching mean
+/// direct QUIC often isn't reachable even in the foreground;
+/// `Minimal` everywhere else, matching every test and desktop default in
+/// the core crate. See `namespace::NetworkPreset`'s doc comment for the
+/// real tradeoff (relay reachability vs. depending on n0.computer's
+/// infrastructure and the connection-metadata visibility that implies).
+fn network_preset() -> NetworkPreset {
+    if cfg!(any(target_os = "android", target_os = "ios")) {
+        NetworkPreset::N0
+    } else {
+        NetworkPreset::Minimal
+    }
+}
 
 /// Tauri-managed app state. Deliberately empty until a command asks for
 /// it — spawning a real iroh endpoint and gossip swarm at app launch,
@@ -93,9 +132,13 @@ async fn spawn_node(state: State<'_, AppState>) -> Result<String, String> {
     if node_guard.is_none() {
         let identity = state.identity.lock().await;
         let identity = identity.as_ref().expect("set above");
-        let node = Node::spawn_persistent(identity, atproto_iroh_core::paths::data_dir().join("node"))
-            .await
-            .map_err(|e| e.to_string())?;
+        let node = Node::spawn_persistent_with_preset(
+            identity,
+            atproto_iroh_core::paths::data_dir().join("node"),
+            network_preset(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
 
         let mut docs = state.docs.lock().await;
         for (namespace_id, _capability) in node
@@ -119,9 +162,33 @@ async fn node_did(state: State<'_, AppState>) -> Result<Option<String>, String> 
     Ok(state.identity.lock().await.as_ref().map(Identity::did))
 }
 
-/// Creates a brand-new namespace and publishes a `NodeProfile` into it —
-/// enough to prove the wiring (identity → namespace → typed record) end
-/// to end from the UI, not a real "create a cooperative" flow.
+/// This UI's own default starting policy for a namespace it founds — a
+/// real answer now, not `placeholder_founding_policy`'s old
+/// not-a-protocol-default heuristic, but still just *this app's* choice
+/// of default, not a protocol constant: SPEC.md §3.7.2 is explicit these
+/// numbers are namespace-owned, and a real client should let the founder
+/// pick them (a form, not a hardcoded call) before this is more than a
+/// reference default. 24-hour objection windows, block threshold 1 —
+/// long enough to be a real window for a small group, not the reference
+/// app's old 1-hour placeholder chosen only for someone actively poking
+/// at the UI.
+fn default_founding_policy() -> FoundingPolicy {
+    let day = PolicyValue { window_seconds: 86_400, block_threshold: 1 };
+    FoundingPolicy {
+        admit_co_signer: day,
+        remove_co_signer: day,
+        change_policy: day,
+    }
+}
+
+/// Creates a brand-new namespace, publishes a `NodeProfile` into it, and
+/// posts this author's `Founding` claim (`fold::found_namespace`) — the
+/// real founding-record mechanism (SPEC.md §6), replacing what used to
+/// be a placeholder heuristic bootstrapped from
+/// `NodeProfile.governance_eligible` self-assertions. The founder is the
+/// namespace's sole genesis member; admitting anyone else afterward goes
+/// through a real `AdmitCoSigner` Proposal, same governance path as
+/// every later change.
 #[tauri::command]
 async fn create_namespace_with_profile(
     state: State<'_, AppState>,
@@ -143,6 +210,10 @@ async fn create_namespace_with_profile(
         created_at: chrono::Utc::now(),
     };
     put_record(&doc, author, NodeProfile::SELF_KEY, &profile)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    fold::found_namespace(&doc, author, vec![author], default_founding_policy())
         .await
         .map_err(|e| e.to_string())?;
 
@@ -238,46 +309,79 @@ fn ticket_to_qr(ticket: String) -> Result<String, String> {
         .build())
 }
 
-/// Writes freeform text at a caller-chosen key — the "Google doc without
-/// Google" primitive, `namespace::put_text` unwrapped for the UI. No
-/// lexicon, no `Record` type; a namespace used this way is just a shared,
-/// synced, capability-scoped key/value space, same machinery as every
-/// typed record above, used with no schema at all.
+/// Saves a new revision of the "Shared doc" — `namespace::
+/// save_document_revision` unwrapped for the UI. **Replaces this
+/// command's old `write_text`/`put_text` implementation**, which wrote
+/// every edit to the same fixed key and was confirmed live
+/// (SPEC.md's 2026-09-22 CRDT note) to silently drop one side's edit
+/// when two people edited offline and reconnected later. This writes an
+/// immutable, uniquely-keyed revision instead — nothing is ever
+/// silently lost, at the cost of the UI having to show more than one
+/// revision when concurrent edits land close together (see
+/// `doc_history`).
 #[tauri::command]
-async fn write_text(
+async fn doc_save(
     state: State<'_, AppState>,
     namespace_id: String,
-    key: String,
+    doc_id: String,
     text: String,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let author = ensure_author(&state).await?;
     let docs = state.docs.lock().await;
     let doc = docs
         .get(&namespace_id)
         .ok_or("unknown namespace — has this node opened it?")?;
-    put_text(doc, author, &key, &text)
+    save_document_revision(doc, author, &doc_id, &text)
         .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
+        .map_err(|e| e.to_string())
 }
 
-/// Reads freeform text back from an exact key.
+/// The latest revision of a "Shared doc" by key order — `namespace::
+/// load_document`. A default for "what to show right now," not a claim
+/// it's the semantically correct pick if two edits landed close
+/// together; a caller that cares should also call `doc_history`.
 #[tauri::command]
-async fn read_text(
+async fn doc_load(
     state: State<'_, AppState>,
     namespace_id: String,
-    key: String,
-) -> Result<Option<String>, String> {
-    let author = ensure_author(&state).await?;
+    doc_id: String,
+) -> Result<Option<(String, String, String)>, String> {
     let node = state.node.lock().await;
     let node = node.as_ref().ok_or("call spawn_node first")?;
     let docs = state.docs.lock().await;
     let doc = docs
         .get(&namespace_id)
         .ok_or("unknown namespace — has this node opened it?")?;
-    get_text(node, doc, author, key.as_str())
+    let result = load_document(node, doc, &doc_id)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(result.map(|(rev, author, text)| (rev, hex::encode(author.as_bytes()), text)))
+}
+
+/// Every revision of a "Shared doc," oldest first — `namespace::
+/// list_document_revisions`. The UI's hook for showing "someone else
+/// edited this while you were offline" instead of silently picking one
+/// side, which is exactly the gap `doc_save` replacing `write_text`
+/// exists to close.
+#[tauri::command]
+async fn doc_history(
+    state: State<'_, AppState>,
+    namespace_id: String,
+    doc_id: String,
+) -> Result<Vec<(String, String, String)>, String> {
+    let node = state.node.lock().await;
+    let node = node.as_ref().ok_or("call spawn_node first")?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    let revisions = list_document_revisions(node, doc, &doc_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(revisions
+        .into_iter()
+        .map(|(author, rev, text)| (rev, hex::encode(author.as_bytes()), text))
+        .collect())
 }
 
 /// Submits text under a fresh, auto-generated key beneath `prefix` — the
@@ -301,51 +405,6 @@ async fn submit_to_inbox(
     submit_text(doc, author, &prefix, &text)
         .await
         .map_err(|e| e.to_string())
-}
-
-/// Placeholder starting policy until SPEC.md §6 item 12's still-open gap
-/// (no `founding` record type — `fold::fold`'s own doc comment names
-/// this) gets a real answer. **Not a protocol default** — SPEC.md §3.7.2
-/// is explicit that these numbers are namespace-owned, group-set state,
-/// never something this document (or this app) gets to fix. Short
-/// windows on purpose, for a reference client someone's actively poking
-/// at, not because a real namespace should use them.
-fn placeholder_founding_policy() -> HashMap<GovernanceClass, PolicyValue> {
-    [
-        (
-            GovernanceClass::AdmitCoSigner,
-            PolicyValue { window_seconds: 3600, block_threshold: 1 },
-        ),
-        (
-            GovernanceClass::RemoveCoSigner,
-            PolicyValue { window_seconds: 3600, block_threshold: 1 },
-        ),
-        (
-            GovernanceClass::ChangePolicy,
-            PolicyValue { window_seconds: 3600, block_threshold: 1 },
-        ),
-    ]
-    .into_iter()
-    .collect()
-}
-
-/// Same gap, same honesty: with no `founding` record naming who a
-/// namespace's founder(s) were, this heuristic treats every author who's
-/// ever self-asserted `governance_eligible: true` in their own
-/// `NodeProfile` as founding-eligible. `profile.json`'s own lexicon
-/// already says that field "is not authoritative" for exactly this
-/// reason — a compromised or just-optimistic client could set it. Fine
-/// for a reference client proving the wiring; not fine as the actual
-/// membership check a real deployment should trust.
-async fn bootstrap_founding_eligible(node: &Node, doc: &Doc) -> Result<HashSet<AuthorId>, String> {
-    let profiles = list_records::<NodeProfile>(node, doc)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(profiles
-        .into_iter()
-        .filter(|(_, _, profile)| profile.governance_eligible == Some(true))
-        .map(|(author, _, _)| author)
-        .collect())
 }
 
 #[derive(serde::Serialize)]
@@ -391,10 +450,11 @@ impl From<GovernanceState> for GovernanceStateView {
 }
 
 /// Every `Proposal` in a namespace, each with its live ratification
-/// status — `fold::fold` unwrapped for the UI. Re-runs the whole fold on
-/// every call (O(every record in the namespace)); fine at reference-app
-/// scale, a real cache/incremental-fold question once a namespace has
-/// more than a handful of proposals.
+/// status — `fold::fold_namespace` unwrapped for the UI: real genesis
+/// state from a synced `Founding` claim, not a heuristic. Re-runs the
+/// whole fold on every call (O(every record in the namespace)); fine at
+/// reference-app scale, a real cache/incremental-fold question once a
+/// namespace has more than a handful of proposals.
 #[tauri::command]
 async fn list_proposals(
     state: State<'_, AppState>,
@@ -407,16 +467,9 @@ async fn list_proposals(
         .get(&namespace_id)
         .ok_or("unknown namespace — has this node opened it?")?;
 
-    let founding_eligible = bootstrap_founding_eligible(node, doc).await?;
-    let (_, outcomes) = fold::fold(
-        node,
-        doc,
-        founding_eligible,
-        placeholder_founding_policy(),
-        chrono::Utc::now(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let (_, outcomes) = fold::fold_namespace(node, doc, chrono::Utc::now())
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(outcomes
         .into_iter()
@@ -429,11 +482,12 @@ async fn list_proposals(
         .collect())
 }
 
-/// Current governance state — who's eligible, per `bootstrap_founding_eligible`
-/// plus every ratified admit/remove since. Separate command from
-/// `list_proposals` because a caller often wants one without the other
-/// (e.g. populating a "who can I address a removeCoSigner proposal at"
-/// list without re-rendering every proposal).
+/// Current governance state — who's eligible, per the namespace's synced
+/// `Founding` claim(s) plus every ratified admit/remove since. Separate
+/// command from `list_proposals` because a caller often wants one
+/// without the other (e.g. populating a "who can I address a
+/// removeCoSigner proposal at" list without re-rendering every
+/// proposal).
 #[tauri::command]
 async fn governance_state(
     state: State<'_, AppState>,
@@ -446,16 +500,9 @@ async fn governance_state(
         .get(&namespace_id)
         .ok_or("unknown namespace — has this node opened it?")?;
 
-    let founding_eligible = bootstrap_founding_eligible(node, doc).await?;
-    let (governance_state, _) = fold::fold(
-        node,
-        doc,
-        founding_eligible,
-        placeholder_founding_policy(),
-        chrono::Utc::now(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let (governance_state, _) = fold::fold_namespace(node, doc, chrono::Utc::now())
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(governance_state.into())
 }
@@ -532,6 +579,11 @@ async fn create_signal(
 fn main() {
     tauri::Builder::default()
         .manage(AppState::default())
+        .setup(|_app| {
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            install_mobile_data_dir(_app)?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             spawn_node,
             node_did,
@@ -541,8 +593,9 @@ fn main() {
             join_namespace,
             dump_namespace,
             ticket_to_qr,
-            write_text,
-            read_text,
+            doc_save,
+            doc_load,
+            doc_history,
             submit_to_inbox,
             list_proposals,
             governance_state,

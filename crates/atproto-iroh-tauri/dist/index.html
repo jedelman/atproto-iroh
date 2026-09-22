@@ -104,10 +104,14 @@
       <section>
         <h2>Shared doc</h2>
         <p class="hint">
-          No schema, no lexicon — plain text at a key everyone with write
-          access shares and edits. Same sync and capability machinery as
-          everything else here, used as a document instead of a typed
-          record. "A Google doc without Google."
+          No schema, no lexicon — a document everyone with write access
+          shares and edits, same sync and capability machinery as
+          everything else here. "A Google doc without Google." Each save
+          writes a new, immutable revision rather than overwriting the
+          last one — two people editing the same doc while offline from
+          each other both keep their edit; "Load" shows the latest by
+          save time, "History" shows every revision so you can notice
+          when more than one landed instead of silently losing one.
         </p>
         <form id="write-text">
           <label>
@@ -115,17 +119,19 @@
             <input id="doc-namespace-id" type="text" required />
           </label>
           <label>
-            Key
-            <input id="doc-key" type="text" value="doc/body" required />
+            Doc id
+            <input id="doc-id" type="text" value="doc/body" required />
           </label>
           <label>
             Text
             <textarea id="doc-text" rows="6"></textarea>
           </label>
           <button type="submit">Save</button>
-          <button type="button" id="doc-load">Load</button>
+          <button type="button" id="doc-load">Load latest</button>
+          <button type="button" id="doc-history-btn">History</button>
         </form>
         <p id="doc-status" class="value">—</p>
+        <ul id="doc-history" class="value"></ul>
       </section>
 
       <section>

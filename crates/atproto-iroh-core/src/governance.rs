@@ -128,6 +128,123 @@ impl Record for Signal {
     const COLLECTION: &'static str = "network.essmesh.governance.signal";
 }
 
+/// A founder's starting policy for all three governed classes —
+/// `PolicyChange`'s shape, but non-optional: a `Founding` claim has to
+/// fully specify where the namespace starts, not partially amend it the
+/// way a `changePolicy` Proposal can.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FoundingPolicy {
+    pub admit_co_signer: PolicyValue,
+    pub remove_co_signer: PolicyValue,
+    pub change_policy: PolicyValue,
+}
+
+impl FoundingPolicy {
+    pub fn as_map(&self) -> HashMap<GovernanceClass, PolicyValue> {
+        [
+            (GovernanceClass::AdmitCoSigner, self.admit_co_signer),
+            (GovernanceClass::RemoveCoSigner, self.remove_co_signer),
+            (GovernanceClass::ChangePolicy, self.change_policy),
+        ]
+        .into_iter()
+        .collect()
+    }
+}
+
+/// `network.essmesh.governance.founding` — SPEC.md §6's founding-record
+/// item: one founder's claim about how a namespace starts (who's
+/// eligible, what the starting policy is), written at the same
+/// per-author fixed key every founder uses (`FOUNDING_KEY`) so multiple
+/// co-founders can each post their own claim without colliding —
+/// `RecordIdentifier`'s `(namespace, author, key)` shape already makes
+/// this safe against forgery the same way every other author-scoped
+/// record in this crate is. See `resolve_founding` for how multiple (or
+/// late/attempted-backdated) claims resolve into one genesis state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Founding {
+    /// Hex-encoded author ids this founder is declaring eligible,
+    /// themselves included. Decoding to a real author type is the
+    /// caller's job (`fold.rs`), same split `Proposal.subject_member`
+    /// already uses — this module stays generic over the author type
+    /// and can't do that decoding itself.
+    pub eligible: Vec<String>,
+    pub policy: FoundingPolicy,
+    pub created_at: DateTime<Utc>,
+}
+
+impl Record for Founding {
+    const COLLECTION: &'static str = "network.essmesh.governance.founding";
+}
+
+/// Every founder writes their claim at this same key under their own
+/// author — mirrors `records::NodeProfile::SELF_KEY`'s "one canonical
+/// slot per author" convention.
+pub const FOUNDING_KEY: &str = "self";
+
+/// Default acceptance window for a founding claim to count — SPEC.md §6:
+/// generous enough for a real multi-founder bootstrap conversation
+/// (co-founders agreeing before anyone shares the namespace), short
+/// enough that a member admitted later can't backdate their way into the
+/// genesis eligible set by posting their own `Founding` claim months
+/// after the fact. No protocol significance beyond that judgment call —
+/// namespace-owned policy already covers everything *after* genesis;
+/// this only governs what counts as genesis in the first place.
+pub const DEFAULT_FOUNDING_WINDOW_SECONDS: i64 = 3600;
+
+/// One decoded founding claim — `Founding`'s wire form with `eligible`
+/// resolved from hex strings to real author ids and `policy` flattened
+/// to the same map shape `fold`/`current_policy` already use. Building
+/// this is `fold.rs`'s job (it has `namespace::decode_author_hex`); this
+/// struct exists so `resolve_founding` can stay pure and generic over
+/// the author type, same as every other function in this module.
+#[derive(Debug, Clone)]
+pub struct FoundingClaim<A> {
+    pub claimant: A,
+    pub eligible: HashSet<A>,
+    pub policy: HashMap<GovernanceClass, PolicyValue>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Resolves every `Founding` claim found in a namespace down to one
+/// genesis state. `None` if `claims` is empty — a namespace with no
+/// founding claim at all, either predating this record type or one that
+/// skipped it; the caller decides what that means (SPEC.md §6), this
+/// function won't invent a default.
+///
+/// The real question this answers isn't "what does the founder say" —
+/// it's "which claims get to count as founding at all." Nothing stops a
+/// member admitted long after genesis (anyone ever granted Write
+/// capability can write under their own author key) from posting their
+/// *own* `Founding` claim, trying to retroactively grant themselves
+/// genesis-eligible status. `RecordIdentifier`'s shape (SPEC.md §3.4)
+/// already stops them from forging a claim as someone else, but says
+/// nothing about *when* a claim was made — so the fix is temporal: take
+/// the earliest claim's `created_at` as t0, and only union eligibility
+/// from claims within `window_seconds` of t0. A claim outside the window
+/// is silently ignored for genesis purposes — its author needs a real
+/// `AdmitCoSigner` Proposal instead, same as anyone else joining later.
+/// Policy is taken only from the earliest claim — unlike eligibility,
+/// starting policy isn't unioned; the first founder sets it, and later
+/// co-founders' declared policy (if any) is ignored rather than
+/// arbitrated, avoiding a conflicting-policy ambiguity this module isn't
+/// going to resolve on anyone's behalf.
+pub fn resolve_founding<A: Eq + std::hash::Hash + Clone>(
+    claims: &[FoundingClaim<A>],
+    window_seconds: i64,
+) -> Option<(HashSet<A>, HashMap<GovernanceClass, PolicyValue>)> {
+    let earliest = claims.iter().min_by_key(|c| c.created_at)?;
+    let t0 = earliest.created_at;
+    let policy = earliest.policy.clone();
+
+    let eligible = claims
+        .iter()
+        .filter(|c| (c.created_at - t0).num_seconds() <= window_seconds)
+        .flat_map(|c| c.eligible.iter().cloned().chain(std::iter::once(c.claimant.clone())))
+        .collect();
+
+    Some((eligible, policy))
+}
+
 /// Builds a `Signal.subject` value referencing one `Proposal` — see
 /// `Signal::subject`'s doc comment for the convention.
 pub fn subject_ref(proposal_author_hex: &str, proposal_rkey: &str) -> String {
@@ -343,6 +460,74 @@ mod tests {
         assert_eq!(
             current_policy(GovernanceClass::AdmitCoSigner, founding, []),
             founding
+        );
+    }
+
+    fn founding_policy() -> FoundingPolicy {
+        FoundingPolicy {
+            admit_co_signer: PolicyValue { window_seconds: 100, block_threshold: 1 },
+            remove_co_signer: PolicyValue { window_seconds: 100, block_threshold: 1 },
+            change_policy: PolicyValue { window_seconds: 100, block_threshold: 1 },
+        }
+    }
+
+    fn claim(claimant: &'static str, eligible: &[&'static str], created_at: i64) -> FoundingClaim<&'static str> {
+        FoundingClaim {
+            claimant,
+            eligible: eligible.iter().copied().collect(),
+            policy: founding_policy().as_map(),
+            created_at: at(created_at),
+        }
+    }
+
+    #[test]
+    fn no_claims_resolves_to_nothing() {
+        let claims: Vec<FoundingClaim<&str>> = vec![];
+        assert_eq!(resolve_founding(&claims, 3600), None);
+    }
+
+    #[test]
+    fn a_single_founder_is_eligible_even_if_they_forgot_to_list_themselves() {
+        let claims = vec![claim("alice", &[], 0)];
+        let (eligible, _) = resolve_founding(&claims, 3600).unwrap();
+        assert_eq!(eligible, ["alice"].into_iter().collect());
+    }
+
+    #[test]
+    fn co_founders_within_the_window_are_unioned() {
+        let claims = vec![
+            claim("alice", &["bob"], 0),
+            claim("bob", &["alice"], 100),
+        ];
+        let (eligible, _) = resolve_founding(&claims, 3600).unwrap();
+        assert_eq!(eligible, ["alice", "bob"].into_iter().collect());
+    }
+
+    #[test]
+    fn a_claim_outside_the_window_is_ignored_not_unioned() {
+        let claims = vec![
+            claim("alice", &[], 0),
+            // mallory was granted write access much later and posts her
+            // own founding claim, trying to backdate her way into the
+            // genesis eligible set.
+            claim("mallory", &[], 10_000),
+        ];
+        let (eligible, _) = resolve_founding(&claims, 3600).unwrap();
+        assert_eq!(eligible, ["alice"].into_iter().collect());
+    }
+
+    #[test]
+    fn policy_comes_from_the_earliest_claim_only() {
+        let mut later = claim("bob", &[], 100);
+        later.policy = HashMap::from([(
+            GovernanceClass::AdmitCoSigner,
+            PolicyValue { window_seconds: 999, block_threshold: 99 },
+        )]);
+        let claims = vec![claim("alice", &["bob"], 0), later];
+        let (_, policy) = resolve_founding(&claims, 3600).unwrap();
+        assert_eq!(
+            policy.get(&GovernanceClass::AdmitCoSigner),
+            Some(&PolicyValue { window_seconds: 100, block_threshold: 1 })
         );
     }
 

@@ -19,7 +19,8 @@ use chrono::{DateTime, Utc};
 use iroh_docs::{api::Doc, AuthorId};
 
 use crate::governance::{
-    self, subject_ref, GovernanceClass, PolicyValue, Proposal, Ratification, Signal,
+    self, subject_ref, Founding, FoundingClaim, FoundingPolicy, GovernanceClass, PolicyValue,
+    Proposal, Ratification, Signal,
 };
 use crate::namespace::{decode_author_hex, list_records, new_entry_key, put_record, Node};
 
@@ -139,6 +140,80 @@ fn apply(state: &mut GovernanceState, proposal: &Proposal) {
 
 fn decode_subject_member(proposal: &Proposal) -> Option<AuthorId> {
     decode_author_hex(proposal.subject_member.as_deref()?)
+}
+
+/// Writes this author's founding claim — SPEC.md §6's founding-record
+/// item. The caller's job, not enforced here: call this once, right
+/// after `Node::create_namespace`, before the namespace is ever shared —
+/// a claim posted well after sharing has begun is exactly the
+/// backdating case `governance::resolve_founding`'s acceptance window
+/// exists to reject; a naturally-timed multi-founder bootstrap (everyone
+/// posting within the window) resolves correctly regardless of exactly
+/// when `share()` happens to be called relative to it.
+pub async fn found_namespace(
+    doc: &Doc,
+    author: AuthorId,
+    eligible: Vec<AuthorId>,
+    policy: FoundingPolicy,
+) -> Result<()> {
+    let founding = Founding {
+        eligible: eligible.iter().map(|a| hex::encode(a.as_bytes())).collect(),
+        policy,
+        created_at: Utc::now(),
+    };
+    put_record(doc, author, governance::FOUNDING_KEY, &founding).await?;
+    Ok(())
+}
+
+/// Reads every `Founding` claim currently synced into `doc` and resolves
+/// them into genesis state — `governance::resolve_founding`, plus the
+/// hex-decoding that module can't do itself (it stays generic over the
+/// author type; this crate's concrete one is `iroh_docs::AuthorId`).
+/// `None` means no claim has ever been posted (SPEC.md §6: a namespace
+/// created before this record type existed, or one that skipped it) —
+/// the caller decides what that means, same as `governance::
+/// resolve_founding` itself.
+pub async fn read_founding(
+    node: &Node,
+    doc: &Doc,
+    window_seconds: i64,
+) -> Result<Option<(HashSet<AuthorId>, HashMap<GovernanceClass, PolicyValue>)>> {
+    let records = list_records::<Founding>(node, doc).await?;
+    let claims: Vec<FoundingClaim<AuthorId>> = records
+        .into_iter()
+        .map(|(author, _rkey, founding)| FoundingClaim {
+            claimant: author,
+            eligible: founding
+                .eligible
+                .iter()
+                .filter_map(|hex_str| decode_author_hex(hex_str))
+                .collect(),
+            policy: founding.policy.as_map(),
+            created_at: founding.created_at,
+        })
+        .collect();
+    Ok(governance::resolve_founding(&claims, window_seconds))
+}
+
+/// The real end-to-end path an app should use: resolves genesis state
+/// from whatever `Founding` claims are synced (falling back to an empty
+/// eligible set and no policy overrides if none exist yet — silence
+/// still ratifies everything by default per SPEC.md §3.9, so an
+/// unfounded namespace isn't unsafe, just unable to ever block anything
+/// until a claim exists), then folds governance history the same as
+/// `fold` above. Supersedes passing `founding_eligible`/`founding_policy`
+/// in by hand — those parameters on `fold` stay for direct/testing use,
+/// this is what a real client calls.
+pub async fn fold_namespace(
+    node: &Node,
+    doc: &Doc,
+    now: DateTime<Utc>,
+) -> Result<(GovernanceState, Vec<Outcome>)> {
+    let (founding_eligible, founding_policy) =
+        read_founding(node, doc, governance::DEFAULT_FOUNDING_WINDOW_SECONDS)
+            .await?
+            .unwrap_or_default();
+    fold(node, doc, founding_eligible, founding_policy, now).await
 }
 
 /// Posts a new `Proposal` under `author`, generating its `rkey`. Returns

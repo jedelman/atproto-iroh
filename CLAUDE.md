@@ -204,20 +204,59 @@ CGNAT and network-switching on mobile mean direct QUIC isn't always
 reachable even in the foreground, so a relay-capable preset is the right
 default for any Android build, separate from the backgrounding question.
 
-**Android storage**, noted for whenever platform work starts: the
-sandboxed-storage model doesn't match `paths.rs`'s current Unix/XDG
-convention (`$ATPROTO_IROH_DATA_DIR`, `$XDG_DATA_HOME`, `$HOME` fallback)
-— Android apps get a fixed per-app private directory
-(`Context.getFilesDir()`/`getExternalFilesDir()`), not an
-environment-variable-driven path, so `paths::data_dir()` will need an
-Android-specific branch (or a value injected from the host app) rather
-than reusing the desktop env-var convention verbatim. Separately, this
-mostly *simplifies* the at-rest-encryption story on Android versus
-desktop: Android encrypts app-private storage by default at the OS level
-(unlike desktop, where `$ATPROTO_IROH_DATA_DIR` pointing at an encrypted
-volume is opt-in) — so the "point it at an encrypted volume" feature
-built this session is a desktop-specific concern, not something Android
-needs replicated.
+**Android storage — wired now, not just noted.** The sandboxed-storage
+gap this section used to just flag is closed:
+`paths::set_data_dir_override` (a process-wide `OnceLock`, checked
+before the env-var convention in `paths::data_dir()`) lets a host with
+no shell environment hand this crate an explicit path instead. The
+Tauri shell's `main.rs` calls it from a `.setup()` hook, behind
+`#[cfg(any(target_os = "android", target_os = "ios"))]`, using
+`app.path().app_data_dir()` — Tauri's own resolver, itself backed by
+`Context.getFilesDir()`/`getExternalFilesDir()` on Android — so identity,
+namespace storage, and the mute list all land in the real per-app
+private directory instead of whatever `$HOME` happens to mean inside an
+Android process (usually nothing usable). `spawn_node` also now binds
+with `NetworkPreset::N0` (`namespace.rs`'s new enum, `presets::N0` under
+the hood — relay fallback plus DNS address lookup) on Android/iOS
+instead of the desktop-default `Minimal`, since CGNAT and network
+switching mean direct QUIC often isn't reachable even in the foreground;
+every existing test still uses `Minimal` unchanged. Separately, Android
+storage mostly *simplifies* the at-rest-encryption story versus desktop:
+Android encrypts app-private storage by default at the OS level (unlike
+desktop, where `$ATPROTO_IROH_DATA_DIR` pointing at an encrypted volume
+is opt-in) — so the "point it at an encrypted volume" feature stays a
+desktop-specific concern, nothing Android needs replicated.
+
+**What's still not done: an actual built, running APK.** Verified in
+this sandbox: the `aarch64-linux-android`/`armv7-linux-androideabi`/
+`i686-linux-android`/`x86_64-linux-android` Rust targets install cleanly
+via `rustup target add`, `cargo-tauri` (the CLI `cargo tauri android
+init`/`build` need) installs and runs, and `cargo tauri android init`
+fails with a clean, expected error — `Android SDK not found at
+/root/Android/Sdk` — because no Android SDK or NDK is installed here.
+**Deliberately not installed in this sandbox**: the NDK alone is
+multi-gigabyte unpacked, this environment's writable disk is a fixed,
+non-refillable allowance (currently single-digit GB free), and a
+partial or failed SDK/NDK install risks exhausting it for every repo
+this session touches, not just this one — judged not worth that risk
+for a step that can be done cleanly on a real dev machine or in CI
+instead. To actually produce a running APK, from a machine or CI runner
+with normal disk headroom:
+```
+# Android Studio's own SDK manager is the easiest path; the manual one:
+sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;27.0.12077973"
+export ANDROID_HOME=~/Android/Sdk
+export NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973
+cd crates/atproto-iroh-tauri
+cargo tauri android init   # generates gen/android/ (gradle project) — not committed, generated
+cargo tauri android build  # or `android dev` for a connected device/emulator
+```
+Nothing about the Rust-side code is expected to need changes for this —
+the data-dir override and `NetworkPreset::N0` wiring above exist
+specifically so `cargo tauri android init/build` has nothing left to
+improvise once a real SDK/NDK is present. Worth pressure-testing for
+real once that's run somewhere with the disk for it, not assumed clean
+from the code alone.
 
 ## Batteries-included app list (recommendation, not yet built)
 

@@ -9,18 +9,20 @@ this is a UI on top of.
 - `src-tauri/` is a genuine Tauri 2 app: `atproto-iroh-core` is a normal
   path dependency, no IPC or FFI boundary between UI-adjacent code and
   protocol logic.
-- Fifteen commands, each a direct call into the core crate: `spawn_node`
+- Sixteen commands, each a direct call into the core crate: `spawn_node`
   (loads or generates a persistent `did:iroh` identity and starts a real
   `iroh` node against real on-disk storage — deliberately not done at
   app launch; see `main.rs`'s comment on why), `node_did`,
-  `create_namespace_with_profile` (creates a namespace and publishes a
-  `NodeProfile` into it), `list_namespaces`, `share_namespace`
-  (`Node::share`, unwrapped to a plain paste-able ticket string),
-  `join_namespace` (`Node::join`, which SPEC.md §6 item 10 confirmed
-  backfills full history, not just future writes — a real join),
-  `dump_namespace` (the inspector, below), `ticket_to_qr` (an SVG QR
-  code of a ticket string, nothing more), `write_text`/`read_text`/
-  `submit_to_inbox` (the freeform layer, below), and
+  `create_namespace_with_profile` (creates a namespace, publishes a
+  `NodeProfile` into it, **and posts this author's real `Founding` claim**
+  — `fold::found_namespace`, replacing what used to be a placeholder
+  heuristic; see the Governance bullet below), `list_namespaces`,
+  `share_namespace` (`Node::share`, unwrapped to a plain paste-able
+  ticket string), `join_namespace` (`Node::join`, which SPEC.md §6 item
+  10 confirmed backfills full history, not just future writes — a real
+  join), `dump_namespace` (the inspector, below), `ticket_to_qr` (an SVG
+  QR code of a ticket string, nothing more), `doc_save`/`doc_load`/
+  `doc_history`/`submit_to_inbox` (the freeform layer, below), and
   `list_proposals`/`governance_state`/`create_proposal`/`create_signal`
   (governance, below). `AppState.docs` holds every namespace this node
   currently has open — repopulated from disk on every `spawn_node` call
@@ -36,22 +38,32 @@ this is a UI on top of.
   automatic over arbitrary types, but every record this crate writes is
   JSON or plain text, so "try JSON, then UTF-8 text, then fall back to
   hex" gets the same practical result: one generic view that already
-  covers `NodeProfile`, governance `Proposal`/`Signal` records, and
-  freeform `put_text` writes without having been told about any of them,
-  and covers whatever gets added next the same way. A debugging view for
-  building against, not a feature end users need.
-- **Freeform text** (`namespace::put_text`/`get_text`/`submit_text`,
-  `dist`'s "Shared doc" and "Inbox" sections): a namespace doesn't have
-  to hold typed records at all — nothing about `iroh-docs` or this crate
-  requires it. `put_text` writes plain UTF-8 at any key, no lexicon, no
-  `Record` impl — the "Google doc without Google" primitive: shared,
-  synced, capability-scoped text anyone with write access can read and
-  edit. `submit_text` is the same idea specialized for uncoordinated
-  submitters — it mints a fresh key per call (`new_entry_key`, shared
-  with `fold.rs`'s `propose`/`signal`), so any number of strangers can
-  write without colliding or needing to agree on anything first. This is
-  the actual mechanism behind "a public inbox" — see the QR note below
-  for why that's safe.
+  covers `NodeProfile`, governance `Proposal`/`Signal`/`Founding`
+  records, and freeform text writes without having been told about any
+  of them, and covers whatever gets added next the same way. A debugging
+  view for building against, not a feature end users need.
+- **Shared doc** (`namespace::save_document_revision`/
+  `list_document_revisions`/`load_document`, `dist`'s "Shared doc"
+  section): a namespace doesn't have to hold typed records at all —
+  nothing about `iroh-docs` or this crate requires it. **No longer backed
+  by `put_text` at a fixed key** — that was confirmed live (SPEC.md's
+  2026-09-22 CRDT note) to be last-write-wins on concurrent offline
+  edits, silently dropping one side's edit on reconnect. `doc_save` now
+  writes an immutable, uniquely-keyed revision instead; `doc_load` shows
+  the latest by save order, `doc_history` shows every revision so the UI
+  can surface "someone else edited this while you were offline" instead
+  of quietly discarding it. `namespace::put_text`/`get_text` still exist
+  in the core crate (right primitive for genuinely single-writer text)
+  but nothing in this UI calls them anymore.
+- **Inbox** (`namespace::submit_text`, `dist`'s "Inbox" section): the
+  freeform layer's other half — `submit_text` mints a fresh key per call
+  (`new_entry_key`, shared with `fold.rs`'s `propose`/`signal`), so any
+  number of strangers can write without colliding or needing to agree on
+  anything first. Unlike `doc_save`, this one's already collision-free by
+  construction (nobody's overwriting anybody else's submission), which is
+  exactly why it didn't need the same CRDT fix the Shared doc primitive
+  did. This is the actual mechanism behind "a public inbox" — see the QR
+  note below for why that's safe.
 - **QR codes** (`ticket_to_qr`): renders a ticket as an SVG QR, nothing
   else — no scanning/camera decode built (see below), no native OS share
   sheet integration (unverified whether Tauri 2 has one; not checked).
@@ -70,24 +82,30 @@ this is a UI on top of.
   code physically posted somewhere is the same trust shape as a ticket
   shared in a DM — nothing discoverable until someone already has the
   capability — just analog instead of digital.
-- **Governance** (`fold::fold`/`propose`/`signal`, `dist`'s "Governance"
-  section): `list_proposals` re-runs the whole fold on every call and
-  returns each `Proposal` with its live `Ratification` status;
-  `create_proposal`/`create_signal` post new records. Real, but built on
-  top of a gap that's still open, not silently papered over:
-  SPEC.md §6 item 12 already named the missing piece (no `founding`
-  record type naming a namespace's actual founder or its starting
-  policy), so this UI supplies a placeholder starting policy
-  (`placeholder_founding_policy`, explicitly documented as not a
-  protocol default) and a heuristic eligible-member set (anyone who's
-  self-asserted `governance_eligible: true` in their own `NodeProfile` —
-  which that lexicon's own field description already calls
-  non-authoritative). Fine for proving the ratification math works
-  against real sync; not fine as the actual membership check a real
-  deployment should trust. `list_proposals`/`governance_state` are also
-  O(every record in the namespace) per call — a caching or incremental-
-  fold question once a namespace has more than a handful of proposals,
-  not addressed here.
+- **Governance** (`fold::fold_namespace`/`propose`/`signal`, `dist`'s
+  "Governance" section): `list_proposals` re-runs the whole fold on
+  every call and returns each `Proposal` with its live `Ratification`
+  status; `create_proposal`/`create_signal` post new records. **The
+  founding-record gap this bullet used to describe is closed** (SPEC.md
+  §6 item 16): `create_namespace_with_profile` now calls
+  `fold::found_namespace` to post a real `Founding` claim at namespace
+  creation (this app's own default starting policy —
+  `default_founding_policy`, still explicitly *this app's* choice, not a
+  protocol constant SPEC.md §3.7.2 says stays namespace-owned), and
+  `list_proposals`/`governance_state` now call `fold::fold_namespace`,
+  which resolves real genesis state from whatever `Founding` claims are
+  synced instead of the old heuristic (self-asserted
+  `governance_eligible: true` in a `NodeProfile`, which that lexicon's
+  own field description already called non-authoritative). What's still
+  a reference-app shortcut, not a protocol gap: the founder is always
+  the namespace's sole genesis member here — this UI never prompts for
+  co-founders at creation time, even though `found_namespace`/
+  `resolve_founding` support a real multi-founder bootstrap. Anyone else
+  has to be admitted afterward through a real `AdmitCoSigner` Proposal,
+  which is correct, just not the only valid founding shape the protocol
+  allows. `list_proposals`/`governance_state` are also O(every record in
+  the namespace) per call — a caching or incremental-fold question once
+  a namespace has more than a handful of proposals, not addressed here.
 - **Persistence** (`identity::Identity::load_or_generate`,
   `namespace::Node::spawn_persistent`, both new): real, not cosmetic.
   Found and fixed a genuine bug while wiring this, not something
@@ -131,11 +149,10 @@ this is a UI on top of.
 This proves the wiring, not a usable app. Missing, in roughly the order
 a real client would need them:
 
-- **A real founding-record mechanism.** Governance is wired, but resting
-  on a placeholder/heuristic bootstrap — the most consequential
-  remaining gap, since it's load-bearing for whether the ratification
-  math means anything in a real deployment, not just a reference
-  client. See the Governance bullet above.
+- **A UI for founding with more than one co-founder.** The mechanism
+  supports it (`resolve_founding`'s whole acceptance-window design exists
+  for exactly this case); this app just never prompts for it — see the
+  Governance bullet above.
 - **Mute UI.** `mute::MuteList` exists and is tested; nothing here reads
   or writes it. Also not yet persisted to the same data directory as
   everything else now is — it still only takes an explicit path.
@@ -148,16 +165,10 @@ a real client would need them:
   desktop. Worth verifying before building, not assuming.
 - **Any error/loading state beyond `textContent = "error: ..."`.** Fine
   for proving the wiring, not fine for anyone else to use.
-- **The "Shared doc" UI still calls `write_text`/`read_text`
-  (`namespace::put_text`/`get_text`), not the new
-  `save_document_revision`/`load_document` pair.** `put_text` is
-  confirmed last-write-wins on a fixed key (SPEC.md's 2026-09-22 CRDT
-  finding, right before §6) — two people editing the same doc while both
-  offline will have one edit silently discarded on reconnect. The core
-  fix (`namespace.rs`, proven live in
-  `crates/atproto-iroh-core/tests/document_revisions.rs`) exists; this
-  UI hasn't been switched over to it yet, so treat "Shared doc" here as
-  the known-lossy primitive until that happens, not as already fixed.
+- **No merge UI for concurrent doc revisions.** `doc_history` surfaces
+  every revision so a person can *see* that two edits landed close
+  together, but nothing here helps them reconcile the two — that's on
+  the person reading the list and re-saving by hand.
 
 ## Building
 

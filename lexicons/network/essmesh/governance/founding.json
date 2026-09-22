@@ -1,0 +1,37 @@
+{
+  "lexicon": 1,
+  "id": "network.essmesh.governance.founding",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "One founder's claim about how a namespace starts: who's eligible and what the starting policy is for each governed class. ESS_MESH_SPEC.md 3.7.2 always said this state is 'bootstrapped at namespace creation by whoever founds it' but never gave it a record type -- this is that record. Every founder writes their own claim at the same fixed key ('self') under their own author, so multiple co-founders can each post one without colliding: the (namespace, author, key) tuple already makes forging or overwriting someone else's claim impossible (SPEC.md 3.4). A reader resolves possibly-multiple claims into one genesis state by taking the earliest claim's createdAt as t0 and unioning eligibility only from claims within a bounded window of t0 (default one hour, itself namespace-owned like every other governance number) -- a claim posted well outside that window is a later member trying to backdate themselves into genesis and is ignored for that purpose; they need a real admitCoSigner Proposal instead, same as anyone else joining later. Starting policy is taken only from the earliest claim, not unioned or arbitrated among co-founders.",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["eligible", "policy", "createdAt"],
+        "properties": {
+          "eligible": {
+            "type": "array",
+            "description": "Hex-encoded author ids this founder is declaring eligible at genesis, themselves included.",
+            "items": { "type": "string" }
+          },
+          "policy": {
+            "type": "object",
+            "description": "This founder's claimed starting policy for all three governed classes -- unlike a changePolicy Proposal's policyChange (network.essmesh.governance.proposal), every field here is required: a Founding claim has to fully specify where the namespace starts, not partially amend it.",
+            "required": ["admitCoSigner", "removeCoSigner", "changePolicy"],
+            "properties": {
+              "admitCoSigner": { "type": "ref", "ref": "network.essmesh.governance.proposal#policyValue" },
+              "removeCoSigner": { "type": "ref", "ref": "network.essmesh.governance.proposal#policyValue" },
+              "changePolicy": { "type": "ref", "ref": "network.essmesh.governance.proposal#policyValue" }
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Self-reported, same trust boundary every other createdAt field in these lexicons already has -- a founder can only lie about their own founding time, which only ever hurts their own claim's chance of falling inside another co-founder's acceptance window, not anyone else's."
+          }
+        }
+      }
+    }
+  }
+}

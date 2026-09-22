@@ -45,15 +45,53 @@ pub struct Node {
     docs: DocsApi,
 }
 
+/// Which `iroh::endpoint::presets` bundle a `Node` binds with —
+/// CLAUDE.md's platform-priority section: `Minimal` (no relay, no
+/// address-lookup service) is what every test and desktop default here
+/// use, hermetic and fine on a LAN or between two processes on one
+/// machine, but wrong for the platform this project actually prioritizes
+/// first. Android phones sit behind CGNAT and switch networks constantly
+/// (wifi to cellular and back), so direct QUIC isn't always reachable
+/// even in the foreground — `N0` adds the relay fallback and DNS-based
+/// address lookup that make a real connection possible when a direct one
+/// isn't, at the cost of depending on n0.computer's relay/DNS
+/// infrastructure rather than staying purely peer-to-peer. Not
+/// unconditionally "the right default everywhere": SPEC.md's goal 1
+/// ("zero ambient legibility") is about namespace content and capability
+/// grants, not transport-layer relay use, but a relay operator can still
+/// see connection metadata (who's talking to whom, roughly when) that a
+/// pure direct-QUIC connection wouldn't expose — a real tradeoff, made
+/// explicitly per-platform here rather than silently defaulted for
+/// everyone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkPreset {
+    /// No relay, no discovery service — direct QUIC only. Every test in
+    /// this crate uses this; right for two processes that can already
+    /// reach each other directly (localhost, a LAN, an org's own server
+    /// on a routable address).
+    Minimal,
+    /// Relay fallback plus DNS-based address lookup (`presets::N0`) —
+    /// the mobile-appropriate choice per CLAUDE.md's platform-priority
+    /// section.
+    N0,
+}
+
 impl Node {
     /// In-memory, throwaway identity and storage — nothing here survives
     /// process exit. What every test and the probe example use; real
     /// persistence is `spawn_persistent` below, which shares this
     /// function's wiring end to end (`spawn_inner`), not a parallel
-    /// implementation of it.
+    /// implementation of it. Binds with `NetworkPreset::Minimal` — a
+    /// throwaway node has no real-world reachability problem to solve.
     pub async fn spawn() -> Result<Self> {
         let blobs = MemStore::default();
-        Self::spawn_inner(SecretKey::generate(), (*blobs).clone(), Docs::memory()).await
+        Self::spawn_inner(
+            SecretKey::generate(),
+            (*blobs).clone(),
+            Docs::memory(),
+            NetworkPreset::Minimal,
+        )
+        .await
     }
 
     /// Real persistence: `identity`'s own secret key becomes the
@@ -76,6 +114,19 @@ impl Node {
     /// also now does (with a throwaway key) for the same reason — one
     /// code path, so this can't silently regress for either caller.
     pub async fn spawn_persistent(identity: &Identity, data_dir: impl AsRef<Path>) -> Result<Self> {
+        Self::spawn_persistent_with_preset(identity, data_dir, NetworkPreset::Minimal).await
+    }
+
+    /// Same as `spawn_persistent`, with an explicit `NetworkPreset` —
+    /// what a mobile host (CLAUDE.md's platform-priority section) should
+    /// call with `NetworkPreset::N0` instead of relying on
+    /// `spawn_persistent`'s `Minimal` default, which assumes direct
+    /// reachability a phone on CGNAT often doesn't have.
+    pub async fn spawn_persistent_with_preset(
+        identity: &Identity,
+        data_dir: impl AsRef<Path>,
+        preset: NetworkPreset,
+    ) -> Result<Self> {
         let data_dir = data_dir.as_ref();
         let blobs_dir = data_dir.join("blobs");
         let docs_dir = data_dir.join("docs");
@@ -86,18 +137,21 @@ impl Node {
         std::fs::create_dir_all(&docs_dir)?;
         let blobs = iroh_blobs::store::fs::FsStore::load(blobs_dir).await?;
         let docs_builder = Docs::persistent(docs_dir);
-        Self::spawn_inner(identity.secret_key().clone(), (*blobs).clone(), docs_builder).await
+        Self::spawn_inner(identity.secret_key().clone(), (*blobs).clone(), docs_builder, preset).await
     }
 
     async fn spawn_inner(
         secret_key: SecretKey,
         blobs: BlobStore,
         docs_builder: DocsBuilder,
+        preset: NetworkPreset,
     ) -> Result<Self> {
-        let endpoint = Endpoint::builder(presets::Minimal)
-            .secret_key(secret_key)
-            .bind()
-            .await?;
+        let endpoint = match preset {
+            NetworkPreset::Minimal => Endpoint::builder(presets::Minimal).secret_key(secret_key),
+            NetworkPreset::N0 => Endpoint::builder(presets::N0).secret_key(secret_key),
+        }
+        .bind()
+        .await?;
         let gossip = Gossip::builder().spawn(endpoint.clone());
         let docs = docs_builder
             .spawn(endpoint.clone(), blobs.clone(), gossip.clone())

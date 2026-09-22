@@ -19,12 +19,32 @@
 //! specific location instead.
 
 use anyhow::{Context, Result};
-use atproto_iroh_core::namespace::{
-    dump_all, get_text, list_document_revisions, load_document, put_text, save_document_revision,
-    Node,
+use atproto_iroh_core::{
+    fold,
+    governance::{FoundingPolicy, PolicyValue},
+    namespace::{
+        dump_all, get_text, list_document_revisions, load_document, put_text,
+        save_document_revision, Node,
+    },
 };
 use clap::{Parser, Subcommand};
 use iroh_docs::{api::protocol::ShareMode, DocTicket, NamespaceId};
+
+/// This CLI's own default starting policy for a namespace it founds —
+/// same 24-hour/threshold-1 default the Tauri shell uses
+/// (`default_founding_policy` there), kept in sync deliberately: both
+/// are reference-client defaults, not a protocol constant (SPEC.md
+/// §3.7.2 — namespace-owned, group-set state). A script that wants
+/// different starting policy has to build its own `Founding` record for
+/// now; no flag exposes this yet (README's "Not built" list).
+fn default_founding_policy() -> FoundingPolicy {
+    let day = PolicyValue { window_seconds: 86_400, block_threshold: 1 };
+    FoundingPolicy {
+        admit_co_signer: day,
+        remove_co_signer: day,
+        change_policy: day,
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "atproto-iroh", about = "Drive an atproto-iroh node from the command line")]
@@ -153,6 +173,11 @@ async fn run(
         }
         Command::CreateNamespace => {
             let doc = node.create_namespace().await?;
+            // Posts this identity's Founding claim (SPEC.md §6) right
+            // after creation, before anything is ever shared — the real
+            // bootstrap path `fold::fold_namespace` needs to resolve
+            // genesis state instead of returning an empty eligible set.
+            fold::found_namespace(&doc, author, vec![author], default_founding_policy()).await?;
             println!("{}", doc.id());
         }
         Command::Share { namespace_id, mode } => {

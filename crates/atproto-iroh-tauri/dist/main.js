@@ -121,16 +121,21 @@ document
 // --- Shared doc --------------------------------------------------------
 
 const docStatusEl = document.getElementById("doc-status");
+const docHistoryEl = document.getElementById("doc-history");
 
 document.getElementById("write-text").addEventListener("submit", async (event) => {
   event.preventDefault();
   const namespaceId = document.getElementById("doc-namespace-id").value;
-  const key = document.getElementById("doc-key").value;
+  const docId = document.getElementById("doc-id").value;
   const text = document.getElementById("doc-text").value;
   docStatusEl.textContent = "saving…";
   try {
-    await invoke("write_text", { namespaceId, key, text });
-    docStatusEl.textContent = `saved at ${new Date().toLocaleTimeString()}`;
+    // doc_save writes a new revision rather than overwriting the last
+    // one — see namespace::save_document_revision's doc comment for why
+    // this replaced write_text/put_text here (a confirmed, silent
+    // data-loss case under concurrent offline edits).
+    const rev = await invoke("doc_save", { namespaceId, docId, text });
+    docStatusEl.textContent = `saved revision ${rev} at ${new Date().toLocaleTimeString()}`;
   } catch (err) {
     docStatusEl.textContent = `error: ${err}`;
   }
@@ -138,15 +143,40 @@ document.getElementById("write-text").addEventListener("submit", async (event) =
 
 document.getElementById("doc-load").addEventListener("click", async () => {
   const namespaceId = document.getElementById("doc-namespace-id").value;
-  const key = document.getElementById("doc-key").value;
+  const docId = document.getElementById("doc-id").value;
   docStatusEl.textContent = "loading…";
   try {
-    const text = await invoke("read_text", { namespaceId, key });
-    document.getElementById("doc-text").value = text ?? "";
-    docStatusEl.textContent =
-      text === null ? "(nothing at that key yet)" : "loaded";
+    const result = await invoke("doc_load", { namespaceId, docId });
+    if (result === null) {
+      document.getElementById("doc-text").value = "";
+      docStatusEl.textContent = "(no revisions of this doc yet)";
+    } else {
+      const [rev, authorHex, text] = result;
+      document.getElementById("doc-text").value = text;
+      docStatusEl.textContent = `loaded revision ${rev} (by ${authorHex.slice(0, 8)}…)`;
+    }
   } catch (err) {
     docStatusEl.textContent = `error: ${err}`;
+  }
+});
+
+document.getElementById("doc-history-btn").addEventListener("click", async () => {
+  const namespaceId = document.getElementById("doc-namespace-id").value;
+  const docId = document.getElementById("doc-id").value;
+  docHistoryEl.textContent = "";
+  try {
+    const revisions = await invoke("doc_history", { namespaceId, docId });
+    if (revisions.length === 0) {
+      docHistoryEl.textContent = "(no revisions yet)";
+      return;
+    }
+    for (const [rev, authorHex, text] of revisions) {
+      const li = document.createElement("li");
+      li.textContent = `${rev} — ${authorHex.slice(0, 8)}…: ${text}`;
+      docHistoryEl.appendChild(li);
+    }
+  } catch (err) {
+    docHistoryEl.textContent = `error: ${err}`;
   }
 });
 

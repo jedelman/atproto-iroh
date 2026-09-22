@@ -1,12 +1,12 @@
 # Lexicons
 
-Four atproto-format lexicon schemas, following the design in
+Five atproto-format lexicon schemas, following the design in
 `../SPEC.md`. Status: drafted following the documented lexicon format
 conventions, **not validated against live atproto tooling** (no lexicon
 validator was run against them; treat as a careful best-effort draft, not
 a certified schema) — same caveat as the rest of `SPEC.md`.
 
-These four are the concrete ESS (cooperative/solidarity-economy) schemas
+These five are the concrete ESS (cooperative/solidarity-economy) schemas
 this protocol was originally designed against — see `SPEC.md`'s note on
 extraction. The protocol itself (identity, edge-graph membership,
 governance primitives) is general-purpose; these particular NSIDs
@@ -16,11 +16,33 @@ alongside them is an open decision (`SPEC.md` §6), not something this
 extraction silently resolved.
 
 ```
-network/essmesh/node/profile.json        one per member (key: self)
-network/essmesh/node/event.json          one per event (key: tid)
-network/essmesh/governance/proposal.json one per decision (key: tid)
-network/essmesh/governance/signal.json   one per member response (key: tid)
+network/essmesh/node/profile.json          one per member (key: self)
+network/essmesh/node/event.json            one per event (key: tid)
+network/essmesh/governance/proposal.json   one per decision (key: tid)
+network/essmesh/governance/signal.json     one per member response (key: tid)
+network/essmesh/governance/founding.json   one per founder (key: literal "self")
 ```
+
+## `governance.founding` — closing the gap this section used to flag
+
+Every version of this file before 2026-09-22 said the founding-record
+gap out loud: `SPEC.md` §3.7.2 requires genesis state ("who's eligible,"
+"what's the starting policy") to exist, but nothing here defined how it
+gets recorded, and the reference client filled it with a heuristic
+(anyone who'd self-asserted `governanceEligible: true`) explicitly
+flagged as not trustworthy. `founding.json` is the real answer: see its
+own `description` for the full mechanism (per-founder claims at a fixed
+key, resolved by taking the earliest claim as t0 and only honoring
+claims within a bounded window of it — so a member admitted long after
+genesis can't backdate their way into the founding eligible set just by
+posting their own claim). Implemented in
+`crates/atproto-iroh-core/src/governance.rs` (`Founding`,
+`resolve_founding`, pure and unit-tested) and `fold.rs`
+(`found_namespace`/`read_founding`/`fold_namespace`, the I/O and
+hex-decoding layer), proven live in
+`crates/atproto-iroh-core/tests/founding.rs`. Both the Tauri shell and
+the CLI now call `fold_namespace`/`found_namespace` for real instead of
+the old placeholder.
 
 ## Why lexicons at all — the case, briefly
 

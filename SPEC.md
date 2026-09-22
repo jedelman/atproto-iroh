@@ -1061,3 +1061,51 @@ both revisions, not just whichever synced last.
     sync/capability substrate has been used for anything real would be
     designing the harder problem first, on no evidence from the easier
     one.
+16. **Resolved (2026-09-22): the founding-record gap this document and
+    the Tauri README both flagged as the most consequential remaining
+    one.** §3.7.2 always required genesis state (who's eligible, what
+    the starting policy is) to exist, without ever saying how it gets
+    recorded — the reference client filled the gap with a heuristic
+    (anyone who'd self-asserted `governanceEligible: true` in their own
+    `NodeProfile`) that lexicon's own field description already called
+    non-authoritative. Real answer: `network.essmesh.governance.founding`
+    (`lexicons/network/essmesh/governance/founding.json`) — a record
+    each founder writes at a fixed per-author key (`self`), the same
+    `(namespace, author, key)` forgery-safety every other author-scoped
+    record in this design already has (§3.4).
+
+    The interesting part isn't the record shape, it's resolving
+    *multiple* claims into one genesis state without opening a new hole:
+    nothing stops a member admitted long after genesis (anyone ever
+    granted Write capability can write under their own author key) from
+    posting their *own* `Founding` claim, trying to retroactively grant
+    themselves genesis-eligible status. `RecordIdentifier`'s shape
+    already stops them from forging a claim as someone else, but says
+    nothing about *when* a claim was made. Fix: take the earliest
+    claim's `createdAt` as t0, and only union eligibility from claims
+    within a bounded acceptance window of t0 (default one hour —
+    `governance::DEFAULT_FOUNDING_WINDOW_SECONDS`, itself just this
+    implementation's default, not a protocol constant, same status every
+    other policy number in this document already has). A claim outside
+    the window is silently ignored for genesis purposes — its author
+    needs a real `admitCoSigner` Proposal instead, same path as anyone
+    else joining later. Starting policy is taken only from the earliest
+    claim, not unioned or arbitrated among co-founders — a real
+    multi-founder disagreement about starting policy isn't something
+    this layer resolves on anyone's behalf.
+
+    Implemented in `crates/atproto-iroh-core/src/governance.rs`
+    (`Founding`, `FoundingClaim`, `resolve_founding` — pure, unit-tested,
+    same "generic over the author type, no I/O" split as the rest of
+    that module) and `fold.rs` (`found_namespace`/`read_founding`/
+    `fold_namespace` — the real hex-decoding and sync-reading layer a
+    client actually calls). Proven live, not just unit-tested:
+    `crates/atproto-iroh-core/tests/founding.rs` posts a real `Founding`
+    claim on one node, syncs it to a second, and confirms
+    `fold_namespace` resolves real genesis state from it with no
+    caller-supplied eligible set or policy at all — the exact heuristic
+    this item closes out. Both the Tauri shell
+    (`create_namespace_with_profile` now calls `found_namespace`;
+    `list_proposals`/`governance_state` now call `fold_namespace`) and
+    the CLI (`create-namespace`) call the real path now, not the
+    heuristic.
