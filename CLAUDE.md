@@ -178,6 +178,25 @@ Windows.** Phones first because that's where non-technical members
 actually are; desktop Linux/Windows matter more for the org-run
 lightweight-node case than for member-facing UX.
 
+**The org's lightweight node as sold hardware, not just self-hosted
+software** (raised in conversation, 2026-09-22, floated as a real
+product direction — a Raspberry Pi or similar, preloaded, a small
+screen showing a join QR code, a single physical reset button, battery
+option for field use). This is the concrete answer to "who runs the
+always-on peer" that doesn't reintroduce a company to trust: the org
+buys a box once instead of renting a service forever, so there's still
+nothing centralized to acquire, subpoena, or enshittify — the box is
+just this repo's own `serve`/CLI (Linux CLI section below) running on
+hardware instead of a laptop somebody has to remember to leave on.
+Genuinely solves discovery too, not just uptime: `ticket_to_qr` already
+renders a join ticket as a QR code, so the box's screen showing it
+physically *is* the onboarding flow — no directory, no invite link
+infrastructure, someone points a phone at the box. Not built as a
+product (no custom OS image, no screen/GPIO integration, no case) — the
+software side (a CLI that can `serve` indefinitely, real persistence, a
+real join flow) already exists and is what such a box would run
+unmodified.
+
 **Background execution — fleshed out, not relied on.** The naive
 assumption ("the app just stays running and syncs") breaks hardest on
 Android: Doze/App Standby aggressively suspends processes and kills
@@ -213,6 +232,27 @@ tests so far) still matters here independent of background execution —
 CGNAT and network-switching on mobile mean direct QUIC isn't always
 reachable even in the foreground, so a relay-capable preset is the right
 default for any Android build, separate from the backgrounding question.
+
+**Notifications, when this gets built: three tiers, not one mechanism
+straining to cover all of it** (resolved in conversation, 2026-09-22).
+Latency is fine for a *notification* — it's never fine for what the app
+shows once actually opened, and conflating those two is what makes
+"just poll in the background" feel like it needs to be fast. Split:
+foreground gets a live connection (or tight polling) while the app's
+open, full fidelity, no latency budget; app launch/wake does an
+immediate pull, so opening the app after being closed never waits on a
+background job's schedule to show current state; only the background
+tier (option 3 above, WorkManager's ~15-minute-to-hours reality) is
+allowed to be slow, because its only job is deciding whether to fire a
+local notification ("something happened, go look"), not keeping full
+state warm. Nobody's ever waiting on the slow tier to see their own
+messages — only to be told to check. Deliberately no FCM/APNs in this
+design even for that local-notification trigger: a push-registration
+service would put Google or Apple back in the loop knowing who's
+pinging whom, which is exactly the kind of intermediary this protocol's
+whole premise (no server anyone has to trust) argues against — the
+Raspberry-Pi-as-sold-hardware model (below) already gives orgs a durable
+peer without needing one.
 
 **Android storage — wired now, not just noted.** The sandboxed-storage
 gap this section used to just flag is closed:
