@@ -51,7 +51,7 @@ use atproto_iroh_core::{
     mute::MuteList,
     namespace::{
         decode_author_hex, dump_all, get_text, list_document_revisions, load_document, put_text,
-        save_document_revision, Node,
+        save_document_revision, NetworkPreset, Node,
     },
     records::{record_ref, Record},
     tagging,
@@ -167,12 +167,49 @@ enum Command {
     /// ever sees or has to trust it; only its network identity
     /// (`did:iroh`) is ever exposed, needed to be dialable at all, never
     /// used to vouch for content it didn't write.
+    /// **Serve now also spawns the control endpoint (`control.rs`) and
+    /// binds with `NetworkPreset::N0`, not `Minimal`** — a relay box is
+    /// exactly the case CLAUDE.md's federation-model section means by
+    /// "the org's always-on node needs to be reachable from anywhere,"
+    /// which needs the relay/DNS discovery `N0` adds; every other
+    /// one-shot command still defaults to `Minimal` via
+    /// `spawn_persistent`, unchanged. Prints the box's `ResetToken` once
+    /// at startup — save it, it's the only proof accepted by
+    /// `control-reset` (the "poison pill"). Exits either on Ctrl+C or on
+    /// a valid remote `RESET`, in which case a process supervisor
+    /// (systemd unit, restart loop, Docker restart policy — none set up
+    /// by this repo) is expected to start this process again fresh
+    /// against a brand-new identity, since `RESET` wipes the whole data
+    /// directory including it.
     Serve {
         #[arg(long)]
         share: Option<String>,
         #[arg(long, value_enum, default_value = "write")]
         mode: Mode,
     },
+    /// Client side of the control endpoint: privately hand a namespace
+    /// ticket to a remote box by its bare `did:iroh` (or `did:iroh:...`),
+    /// no capability of the sender's own required to reach it — see
+    /// `control.rs`'s module doc for why `JOIN` needs no authorization
+    /// beyond "you can reach this address."
+    ///
+    /// **Bare-`did:iroh`-only dialing (resolved via `NetworkPreset::N0`'s
+    /// relay/DNS discovery) is unverified in this dev sandbox** — tried
+    /// live here (two local `atproto-iroh` processes, one `serve`, one
+    /// `control-reset` against its printed did), and it hangs rather than
+    /// connecting, consistent with `tests/control.rs`'s finding that this
+    /// sandbox has no real outbound reachability to n0.computer's
+    /// infrastructure. The underlying `JOIN`/`RESET` protocol logic
+    /// itself *is* proven live (`tests/control.rs`, dialing an explicit
+    /// `EndpointAddr`) — what's unverified is specifically the
+    /// "just the DID, nothing else" production path this command takes,
+    /// same honesty pattern as the Android APK build gap.
+    ControlJoin { did: String, ticket: String },
+    /// Client side of the poison pill: remotely wipe a box's entire data
+    /// directory (identity included), proven with its `ResetToken` — only
+    /// whoever set the box up or was handed the token can do this. Same
+    /// bare-DID-dialing caveat as `control-join`, above.
+    ControlReset { did: String, token: String },
     /// Send a message into a namespace — the namespace is the channel,
     /// no separate room concept. `--reply-to` takes
     /// "{author_hex}/{rkey}" (as printed by `messages`) to reply to an
@@ -237,15 +274,89 @@ async fn main() -> Result<()> {
 
     let identity = atproto_iroh_core::identity::Identity::load_or_generate(identity_path())
         .context("loading/generating CLI identity")?;
-    let node = Node::spawn_persistent(&identity, cli_data_dir())
-        .await
-        .context("spawning persistent node")?;
+
+    // `Serve` alone spawns the control endpoint and binds N0 (this
+    // file's own doc comment on `Command::Serve` has why); `control-join`/
+    // `control-reset` also need N0 since they're specifically about
+    // dialing a box that may not be on the same LAN. Every other
+    // command stays on plain `spawn_persistent` (Minimal), unchanged.
+    let needs_relay_network = matches!(
+        cli.command,
+        Command::Serve { .. } | Command::ControlJoin { .. } | Command::ControlReset { .. }
+    );
+
+    if let Command::Serve { share, mode } = &cli.command {
+        return serve(&identity, share.as_deref(), mode).await;
+    }
+
+    let node = if needs_relay_network {
+        Node::spawn_persistent_with_preset(&identity, cli_data_dir(), NetworkPreset::N0)
+            .await
+            .context("spawning node")?
+    } else {
+        Node::spawn_persistent(&identity, cli_data_dir())
+            .await
+            .context("spawning persistent node")?
+    };
 
     let output = run(&cli.command, &node, &identity).await;
 
     node.shutdown().await;
     output?;
     Ok(())
+}
+
+/// `Serve`'s own entry point, separate from `run()`: it needs
+/// `Node::spawn_relay` (a different return shape — node plus reset token
+/// plus reset signal) and a `select!` on exit that no other command
+/// needs, so it doesn't fit `run()`'s one-node-in, one-output-out shape.
+async fn serve(
+    identity: &atproto_iroh_core::identity::Identity,
+    share: Option<&str>,
+    mode: &Mode,
+) -> Result<()> {
+    let (node, reset_token, reset_signal) =
+        Node::spawn_relay(identity, cli_data_dir(), NetworkPreset::N0)
+            .await
+            .context("spawning relay node")?;
+
+    let namespaces = node.list_local_namespaces().await?;
+    for (id, capability) in &namespaces {
+        node.open_namespace(*id).await?;
+        println!("serving {id} ({capability:?})");
+    }
+    if let Some(namespace_id) = share {
+        let doc = open(&node, namespace_id).await?;
+        let share_mode = match mode {
+            Mode::Read => ShareMode::Read,
+            Mode::Write => ShareMode::Write,
+        };
+        let ticket = node.share(&doc, share_mode).await?;
+        println!("ticket: {ticket}");
+    }
+    println!("did: {}", identity.did());
+    println!("reset token (save this — required to remotely wipe this box): {}", reset_token.as_str());
+    println!("listening — Ctrl+C to stop, or a remote control-reset with the token above");
+
+    tokio::select! {
+        result = tokio::signal::ctrl_c() => {
+            result?;
+            node.shutdown().await;
+        }
+        () = reset_signal.notified() => {
+            println!("received a valid RESET — data directory wiped, exiting for a supervisor to restart fresh");
+            node.shutdown().await;
+        }
+    }
+    Ok(())
+}
+
+/// Accepts a bare `PublicKey`'s display form or a `did:iroh:<...>` string
+/// — `control-join`/`control-reset` take whichever a user has on hand
+/// (the box's `did` command prints the `did:iroh:` form).
+fn parse_did(did: &str) -> Result<iroh::PublicKey> {
+    let key_str = did.strip_prefix("did:iroh:").unwrap_or(did);
+    key_str.parse().with_context(|| format!("invalid did:iroh / public key: {did}"))
 }
 
 /// Resolves this node's default authoring identity — lazily, only when a
@@ -460,29 +571,23 @@ async fn run(
                 None => eprintln!("(image bytes not found — not synced yet, or wrong ref)"),
             }
         }
-        Command::Serve { share, mode } => {
-            // Reopen every namespace this node already holds a capability
-            // into — same reason `spawn_node` does this in the Tauri
-            // shell (`main.rs`'s own doc comment there): a fresh process
-            // remembers nothing in memory, only the persistent store
-            // does.
-            let namespaces = node.list_local_namespaces().await?;
-            for (id, capability) in &namespaces {
-                node.open_namespace(*id).await?;
-                println!("serving {id} ({capability:?})");
-            }
-            if let Some(namespace_id) = share {
-                let doc = open(node, namespace_id).await?;
-                let share_mode = match mode {
-                    Mode::Read => ShareMode::Read,
-                    Mode::Write => ShareMode::Write,
-                };
-                let ticket = node.share(&doc, share_mode).await?;
-                println!("ticket: {ticket}");
-            }
-            println!("did: {}", identity.did());
-            println!("listening — Ctrl+C to stop");
-            tokio::signal::ctrl_c().await?;
+        Command::Serve { .. } => {
+            // Handled entirely by `serve()` in `main()` before `run()` is
+            // ever called — it needs `Node::spawn_relay`'s different
+            // return shape (node + reset token + reset signal) and a
+            // `select!` on exit, neither of which fits this function's
+            // one-node-in shape. Unreachable in practice.
+            unreachable!("Serve is dispatched to serve() before run() is called")
+        }
+        Command::ControlJoin { did, ticket } => {
+            let target = parse_did(did)?;
+            let response = node.send_control(target, &format!("JOIN {ticket}")).await?;
+            println!("{response}");
+        }
+        Command::ControlReset { did, token } => {
+            let target = parse_did(did)?;
+            let response = node.send_control(target, &format!("RESET {token}")).await?;
+            println!("{response}");
         }
     }
     Ok(())

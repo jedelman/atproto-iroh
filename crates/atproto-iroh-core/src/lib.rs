@@ -2,6 +2,10 @@
 //! the design record and `../../CLAUDE.md` for how to extend this crate.
 //!
 //! Module map, and which SPEC.md section each one implements:
+//! - [`control`] — the relay-mode message endpoint (raw QUIC, not a synced
+//!   doc): `JOIN`/`RESET` over a direct connection to a node's `did:iroh`,
+//!   no capability needed to reach it. CLAUDE.md's federation-model
+//!   section has the design conversation this resolved.
 //! - [`identity`] — `did:iroh` (§3.2)
 //! - [`namespace`] — namespaces as `iroh-docs` documents, typed record
 //!   read/write (§3.3/§3.4, validated in `examples/iroh_docs_probe.rs`)
@@ -21,6 +25,7 @@
 //! - [`tagging`] — `network.essmesh.tag` (batteries-included app list),
 //!   cross-lexicon by construction via `records::record_ref`
 
+pub mod control;
 pub mod fold;
 pub mod governance;
 pub mod identity;

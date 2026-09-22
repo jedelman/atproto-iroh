@@ -276,6 +276,107 @@ neither built:
   operation, fine for one-org-per-box, awkward for a box meant to relay
   several groups at once. Not addressed.
 
+**The control endpoint — built (2026-09-22): a raw message endpoint, not
+a synced doc, replacing an earlier "docs-inbox" idea, and it doubles as
+the poison pill.** The full arc, kept visible rather than collapsed to
+just the final design, per this document's own stated practice:
+
+1. **First proposal: the QR code is a docs-namespace inbox.** Raised in
+   conversation: "the qr code is an inbox. If anyone sends a repo read
+   ticket to that inbox the relay subscribes to the repo. Then we don't
+   need a privileged admin role and that secret can be distributed in
+   whatever way is appropriate to the org." Feasible — reuses
+   `submit_text` (an uncoordinated public-write primitive that already
+   exists) plus `Node::join` — but evaluated with two real tradeoffs
+   before building it: an open-relay/flooding risk (anyone who can write
+   to the inbox can make the box try to join arbitrary namespaces), and
+   a genuine cross-org privacy leak specific to a box serving more than
+   one group — Read capability into a shared inbox namespace means
+   seeing *every* ticket ever submitted to it, not just the one you sent.
+2. **Revised: a raw message endpoint instead.** Follow-up: "What if it's
+   a message endpoint not a doc?" Strictly better on the leak: a direct,
+   ephemeral, point-to-point QUIC connection (this module alone ever
+   sees it) has no shared or durable state to leak from at all — the
+   cross-org problem disappears structurally, not by policy. Also
+   simplifies onboarding: the QR only ever needs to encode the box's
+   bare `did:iroh`, the same thing it already needs to be dialable for
+   ordinary docs sync, not a capability into anything. Still didn't
+   solve authorization-of-who-can-ask (anyone reaching the address can
+   ask it to `JOIN`) — deliberately left that way, reasoned through
+   below.
+3. **Built, with the poison pill added in the same request**: "Build it.
+   But remember the reset button I was telling you about? This address
+   should also accept a poison pill that wipes the box and generates a
+   new qr code. That's why I wanted a screen on it!" —
+   `crates/atproto-iroh-core/src/control.rs`, one `ProtocolHandler` on
+   its own ALPN (`CONTROL_ALPN`), registered on the same `Router` as
+   blobs/gossip/docs. Two plain-text operations, one request/response
+   each:
+   - **`JOIN <ticket>`** — needs no authorization beyond "you can reach
+     this address." Deliberate, not an oversight: joining a namespace
+     already requires holding that namespace's own real capability (the
+     ticket, a bearer secret per SPEC.md §3.4) — the control endpoint
+     doesn't add a new trust requirement, it just gives a private
+     channel to deliver one instead of routing it through some other
+     medium.
+   - **`RESET <token>`** — the poison pill Jason described, and the
+     actual reason the box needs a screen (so it can show the *new*
+     QR after a reset, not just accept the operation blind). Requires a
+     `ResetToken` generated once alongside `Identity`
+     (`ResetToken::load_or_generate`, same load-or-create shape as
+     `Identity::load_or_generate`/`MuteList::load`) and checked by plain
+     string comparison — fine here since QUIC already encrypts the
+     channel and a 32-byte random token, not the comparison method, is
+     the actual defense. A valid token deletes the box's entire data
+     directory (identity included — a real factory reset, not just
+     clearing content) and fires a `tokio::sync::Notify` the caller
+     awaits alongside Ctrl+C, so `serve` exits cleanly and a process
+     supervisor (systemd unit, restart loop, Docker restart policy — none
+     built) restarts it fresh against a brand-new `did:iroh`, i.e. a new
+     QR code, closing the loop back to the physical reset button.
+   `Node::spawn_relay` wires this into node construction (returns the
+   node plus its `ResetToken` plus the `Arc<Notify>`); `Node::send_control`
+   is the client-side dial helper. `crates/atproto-iroh-cli`'s `serve` now
+   uses `spawn_relay` (printing the token once at startup, `select!`-ing
+   Ctrl+C against the reset signal), and `control-join`/`control-reset`
+   are the client-side commands — see that crate's own README for exact
+   shapes.
+
+**Confirmed live, with one real gap found along the way.**
+`crates/atproto-iroh-core/tests/control.rs` proves the actual protocol
+logic end to end: a real second node dials the box's control endpoint
+and joins a namespace with no capability of its own beyond reachability;
+a wrong `RESET` token is rejected and touches nothing; a correct one
+wipes the data directory, fires the signal, and the box's next
+`ResetToken::load_or_generate` produces a different token, confirming a
+real restart rather than reused state. Two things found live while
+getting this to actually pass, not assumed clean from the code:
+- **A real bug, not a sandbox limitation**: the first version of
+  `ControlHandler::accept` returned as soon as it finished writing the
+  response, which raced the `Router` tearing the connection down against
+  the client still reading it (`read error: connection lost / closed by
+  peer: 0`) — iroh's own `echo` example does the same
+  `connection.closed().await` this was missing, added to both the server
+  handler and (as an explicit `connection.close(...)` call) the client
+  helper, which fixed it.
+- **A sandbox limitation, not a code bug, matching the Android APK build
+  gap's honesty pattern**: dialing a target by bare `PublicKey` alone
+  (`target.into()` → `EndpointAddr` with no address info, resolved via
+  discovery) fails in this sandbox even under `NetworkPreset::N0` — "No
+  addressing information available / All address lookup services failed"
+  — confirmed again live via the CLI itself (`serve` in the background,
+  `control-reset` against its printed `did:iroh` from a second process:
+  it hangs rather than connecting). This points to no real outbound
+  reachability to n0.computer's relay/DNS infrastructure from this
+  specific sandbox, not a flaw in the bare-DID design. The tests instead
+  dial the box's actual `EndpointAddr` (`Node::endpoint_addr`, a new
+  accessor wrapping `Endpoint::addr()`) via a lower-level
+  `Node::send_control_to`/`control::send_control_message_to`, which
+  exists specifically to make this verifiable here — the production API
+  (`Node::send_control`, the CLI's `control-join`/`control-reset`) stays
+  bare-`did:iroh`-only, matching the design intent, and remains something
+  to re-verify on a machine with genuine internet access.
+
 **Background execution — fleshed out, not relied on.** The naive
 assumption ("the app just stays running and syncs") breaks hardest on
 Android: Doze/App Standby aggressively suspends processes and kills

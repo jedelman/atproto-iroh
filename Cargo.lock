@@ -261,6 +261,7 @@ dependencies = [
  "atproto-iroh-core",
  "clap",
  "hex",
+ "iroh",
  "iroh-docs",
  "serde_json",
  "tokio",

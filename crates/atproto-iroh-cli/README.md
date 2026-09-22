@@ -69,6 +69,47 @@ anything a peer receives, and never has to be trusted by anyone. Only
 its network identity (`did:iroh`) is ever exposed, and only because it
 has to be dialable at all.
 
+## The control endpoint (relay mode's onboarding + poison pill)
+
+`serve` now also spawns a raw QUIC control endpoint (`atproto-iroh-core`'s
+`control.rs`) and binds with `NetworkPreset::N0` instead of `Minimal` —
+the design resolved in conversation (2026-09-22), replacing an earlier
+docs-namespace "inbox" idea; root `CLAUDE.md`'s federation-model section
+has the full trail. Two operations, both plain text over a direct,
+ephemeral connection to the box's bare `did:iroh` — nothing synced,
+nothing durable, nothing a shared namespace could ever leak:
+
+- **`JOIN <ticket>`** — hands the box a namespace ticket to import
+  privately. No authorization beyond reachability: the ticket itself is
+  already the real capability (SPEC.md §3.4's bearer-secret model), so
+  this doesn't add a new trust requirement, just a private channel to
+  deliver one.
+- **`RESET <token>`** — the poison pill. Wipes the box's entire data
+  directory (identity included) and signals `serve`'s own loop to exit,
+  so a process supervisor restarts it fresh against a brand-new
+  `did:iroh`. Requires the box's own `ResetToken` (printed once at
+  `serve` startup) — reaching the box is not enough to destroy it.
+
+Client side: `control-join <did> <ticket>` / `control-reset <did>
+<token>` dial a remote box directly, no local capability into anything
+the box holds required.
+
+**Verified live in this sandbox, with a real caveat.** The protocol
+logic itself (`JOIN`/`RESET` end to end, including a real data-directory
+wipe and the reset signal firing) is proven live —
+`atproto-iroh-core/tests/control.rs`'s two tests dial an explicit
+`EndpointAddr` rather than a bare public key. **What's unverified here
+specifically is bare-`did:iroh`-only dialing via `NetworkPreset::N0`'s
+relay/DNS discovery** — tried directly with two real `atproto-iroh`
+processes (`serve` in the background, then `control-reset <its did>
+wrong-token` from a second process), and it hangs rather than
+connecting or erroring, consistent with this sandbox having no real
+outbound reachability to n0.computer's infrastructure. This is an
+environment limitation, not a design or code defect — same honesty
+pattern as the Android APK build gap in root `CLAUDE.md`. Worth
+re-testing `control-join`/`control-reset` for real on a machine or two
+network-separated boxes with genuine internet access.
+
 ## Commands
 
 - `did` — print this CLI identity's `did:iroh`.
@@ -99,9 +140,16 @@ has to be dialable at all.
   use this to notice when two offline edits both survived instead of
   trusting `doc-load` picked the one you wanted.
 - `serve [--share <namespace-id> [--mode read|write]]` — stays running
-  and reachable until Ctrl+C. Reopens every namespace this identity
-  already holds; `--share` additionally prints a fresh ticket for one
-  namespace from this same live process before it starts listening.
+  and reachable until Ctrl+C or a valid remote `control-reset`. Reopens
+  every namespace this identity already holds; `--share` additionally
+  prints a fresh ticket for one namespace from this same live process
+  before it starts listening. Also spawns the control endpoint and
+  prints the box's `ResetToken` once at startup — see "The control
+  endpoint," above.
+- `control-join <did> <ticket>` — privately hands a namespace ticket to a
+  remote box by its `did:iroh`, no local capability required.
+- `control-reset <did> <token>` — the poison pill: remotely wipes a
+  box's entire data directory given its `ResetToken`.
 - `send <namespace-id> <text> [--reply-to <ref>]` — posts a message
   (`network.essmesh.chat.message`); the namespace is the channel, no
   separate room concept. Prints the new message's own

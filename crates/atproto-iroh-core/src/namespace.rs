@@ -12,10 +12,10 @@
 //! signing identity for *entries*, which is a different thing from *who
 //! can write at all*.
 
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use anyhow::Result;
-use iroh::{endpoint::presets, Endpoint, SecretKey};
+use iroh::{endpoint::presets, Endpoint, PublicKey, SecretKey};
 use iroh_blobs::{api::Store as BlobStore, store::mem::MemStore, BlobsProtocol, ALPN as BLOBS_ALPN};
 use iroh_docs::{
     api::{
@@ -28,8 +28,10 @@ use iroh_docs::{
 };
 use iroh_gossip::{net::Gossip, ALPN as GOSSIP_ALPN};
 use n0_future::StreamExt;
+use tokio::sync::Notify;
 
 use crate::{
+    control::{self, ControlConfig, ResetToken, CONTROL_ALPN},
     identity::Identity,
     records::{key_for, Record},
 };
@@ -90,6 +92,7 @@ impl Node {
             (*blobs).clone(),
             Docs::memory(),
             NetworkPreset::Minimal,
+            None,
         )
         .await
     }
@@ -127,6 +130,43 @@ impl Node {
         data_dir: impl AsRef<Path>,
         preset: NetworkPreset,
     ) -> Result<Self> {
+        Self::spawn_persistent_inner(identity, data_dir, preset, None).await
+    }
+
+    /// Same as `spawn_persistent_with_preset`, with the control endpoint
+    /// (`control` module) enabled — relay mode: the box's onboarding
+    /// address is just its `did:iroh` (`identity.did()`), and anyone who
+    /// can reach it can privately hand it a namespace ticket to join, or
+    /// (with proof of the returned `ResetToken`) tell it to wipe itself.
+    /// See `control.rs`'s module doc for the full design this implements
+    /// and why `JOIN` and `RESET` have different authorization bars.
+    /// Returns the reset signal alongside the node so a caller (the CLI's
+    /// `serve` loop) can await it next to Ctrl+C and know when a remote
+    /// `RESET` has wiped local data and the process should exit for a
+    /// supervisor to restart it fresh.
+    pub async fn spawn_relay(
+        identity: &Identity,
+        data_dir: impl AsRef<Path>,
+        preset: NetworkPreset,
+    ) -> Result<(Self, ResetToken, Arc<Notify>)> {
+        let data_dir = data_dir.as_ref().to_path_buf();
+        let reset_token = ResetToken::load_or_generate(data_dir.join("reset-token"))?;
+        let reset_signal = Arc::new(Notify::new());
+        let config = ControlConfig {
+            reset_token: reset_token.clone(),
+            wipe_dir: data_dir.clone(),
+            reset_signal: reset_signal.clone(),
+        };
+        let node = Self::spawn_persistent_inner(identity, &data_dir, preset, Some(config)).await?;
+        Ok((node, reset_token, reset_signal))
+    }
+
+    async fn spawn_persistent_inner(
+        identity: &Identity,
+        data_dir: impl AsRef<Path>,
+        preset: NetworkPreset,
+        control: Option<ControlConfig>,
+    ) -> Result<Self> {
         let data_dir = data_dir.as_ref();
         let blobs_dir = data_dir.join("blobs");
         let docs_dir = data_dir.join("docs");
@@ -137,7 +177,7 @@ impl Node {
         std::fs::create_dir_all(&docs_dir)?;
         let blobs = iroh_blobs::store::fs::FsStore::load(blobs_dir).await?;
         let docs_builder = Docs::persistent(docs_dir);
-        Self::spawn_inner(identity.secret_key().clone(), (*blobs).clone(), docs_builder, preset).await
+        Self::spawn_inner(identity.secret_key().clone(), (*blobs).clone(), docs_builder, preset, control).await
     }
 
     async fn spawn_inner(
@@ -145,6 +185,7 @@ impl Node {
         blobs: BlobStore,
         docs_builder: DocsBuilder,
         preset: NetworkPreset,
+        control: Option<ControlConfig>,
     ) -> Result<Self> {
         let endpoint = match preset {
             NetworkPreset::Minimal => Endpoint::builder(presets::Minimal).secret_key(secret_key),
@@ -156,16 +197,50 @@ impl Node {
         let docs = docs_builder
             .spawn(endpoint.clone(), blobs.clone(), gossip.clone())
             .await?;
-        let router = iroh::protocol::Router::builder(endpoint.clone())
+        let mut router_builder = iroh::protocol::Router::builder(endpoint.clone())
             .accept(BLOBS_ALPN, BlobsProtocol::new(&blobs, None))
             .accept(GOSSIP_ALPN, gossip)
-            .accept(DOCS_ALPN, docs.clone())
-            .spawn();
+            .accept(DOCS_ALPN, docs.clone());
+        if let Some(config) = &control {
+            router_builder = router_builder.accept(
+                CONTROL_ALPN,
+                control::ControlHandler::new(docs.api().clone(), config),
+            );
+        }
+        let router = router_builder.spawn();
         Ok(Self {
             router,
             blobs,
             docs: docs.api().clone(),
         })
+    }
+
+    /// Sends a control message directly to `target` — no capability
+    /// needed, just its `did:iroh` public key. See `control.rs` for the
+    /// two supported requests (`"JOIN <ticket>"`, `"RESET <token>"`) and
+    /// the design this implements.
+    pub async fn send_control(&self, target: PublicKey, message: &str) -> Result<String> {
+        control::send_control_message(self.router.endpoint(), target, message).await
+    }
+
+    /// This node's own full current network address (relay URL and any
+    /// direct socket addresses it currently has), not just its bare
+    /// `did:iroh` public key. Exists for dialing a target explicitly when
+    /// bare-key address-lookup discovery isn't available — see
+    /// `tests/control.rs`'s doc comment for why the live tests need this
+    /// (this sandbox has no outbound reachability to n0.computer's actual
+    /// relay/DNS infrastructure, so `NetworkPreset::N0`'s discovery can't
+    /// be exercised here even though it's the intended production path).
+    pub fn endpoint_addr(&self) -> iroh::EndpointAddr {
+        self.router.endpoint().addr()
+    }
+
+    /// Same as [`Node::send_control`] but dials an explicit
+    /// [`iroh::EndpointAddr`] instead of relying on discovery to resolve a
+    /// bare public key. See `endpoint_addr`'s doc comment for why this
+    /// exists.
+    pub async fn send_control_to(&self, target: iroh::EndpointAddr, message: &str) -> Result<String> {
+        control::send_control_message_to(self.router.endpoint(), target, message).await
     }
 
     pub fn docs(&self) -> &DocsApi {
