@@ -49,12 +49,14 @@ Images, Tagging — cross-lexicon by construction — and Documents UX);
 see that section for exactly what's still just a recommendation
 (Search, Calendar, and the deliberately-not-building-it presence case).
 
-What's still genuinely unbuilt: mobile has real prep (Android-aware data
-directory override, a relay-capable `NetworkPreset`) but no actual built,
-running APK — CLAUDE.md's platform-priority section has the exact gap
-and the commands to close it on a machine with real disk headroom; QR
-scanning (generation only); mute/profile UI has no CLI parity for
-profile specifically; and no thumbnailing/format validation on images.
+What's still genuinely unbuilt: a real APK now exists (2026-09-23,
+built and inspected in this sandbox — federation-model section has the
+full account, including a real Rust-side fix it required despite an
+earlier claim that none would be needed) but it's unsigned, untested on
+an actual device/emulator, and only built for `aarch64`, not the other
+three Android ABIs; QR scanning (generation only); mute/profile UI has
+no CLI parity for profile specifically; and no thumbnailing/format
+validation on images.
 If a future `iroh-docs` upgrade or new finding turns any of the resolved
 SPEC.md forks out to be wrong, don't patch around it quietly — revise
 the relevant section the same way every previous revision is recorded,
@@ -457,36 +459,70 @@ desktop, where `$ATPROTO_IROH_DATA_DIR` pointing at an encrypted volume
 is opt-in) — so the "point it at an encrypted volume" feature stays a
 desktop-specific concern, nothing Android needs replicated.
 
-**What's still not done: an actual built, running APK.** Verified in
-this sandbox: the `aarch64-linux-android`/`armv7-linux-androideabi`/
-`i686-linux-android`/`x86_64-linux-android` Rust targets install cleanly
-via `rustup target add`, `cargo-tauri` (the CLI `cargo tauri android
-init`/`build` need) installs and runs, and `cargo tauri android init`
-fails with a clean, expected error — `Android SDK not found at
-/root/Android/Sdk` — because no Android SDK or NDK is installed here.
-**Deliberately not installed in this sandbox**: the NDK alone is
-multi-gigabyte unpacked, this environment's writable disk is a fixed,
-non-refillable allowance (currently single-digit GB free), and a
-partial or failed SDK/NDK install risks exhausting it for every repo
-this session touches, not just this one — judged not worth that risk
-for a step that can be done cleanly on a real dev machine or in CI
-instead. To actually produce a running APK, from a machine or CI runner
-with normal disk headroom:
+**A real, built, running-capable APK — done (2026-09-23), closing the
+gap this section used to just flag.** Earlier sessions deliberately
+skipped installing the Android SDK/NDK here over disk-space risk; this
+one did it for real once the risk was re-checked and found manageable
+(`cargo clean` alone reclaimed ~24GB of stale `target/` build
+artifacts, leaving 29GB free — plenty of headroom for the SDK+NDK's few
+GB). `sdkmanager --install "platform-tools" "platforms;android-34"
+"build-tools;34.0.0" "ndk;27.0.12077973"` (Google's command-line tools
+package, downloaded straight from `dl.google.com` — the sandbox's
+proxy setup didn't block it) installed cleanly, `cargo tauri android
+init` generated a real Gradle project, and `cargo tauri android build
+--target aarch64` produced an actual signed-format APK: `gen/android/
+app/build/outputs/apk/universal/release/app-universal-release-
+unsigned.apk`, 42MB, containing a real `classes.dex`, `AndroidManifest.
+xml`, and `lib/arm64-v8a/libatproto_iroh_tauri_lib.so` (the compiled
+Rust core, cross-compiled for real, not stubbed) — confirmed by
+actually unzipping it and inspecting those entries, not just trusting
+a zero exit code. Unsigned, so it needs `apksigner` (or Android
+Studio's own signing flow) before it'll install on a real device — that
+step wasn't run here.
+
+**One claim from the earlier version of this section turned out to be
+wrong, found live**: "nothing about the Rust-side code is expected to
+need changes for this" — false. `cargo tauri android init` requires the
+app's logic reachable from a *library* crate (Tauri's Android/iOS build
+links this crate as a `cdylib`/`staticlib` and calls a `run()` function
+directly — there's no `main()` on mobile at all), and this crate only
+ever had a `main.rs` with `fn main()`. Fixed by splitting: everything
+moved into `lib.rs`'s `pub fn run()` (tagged `#[cfg_attr(mobile, tauri::
+mobile_entry_point)]`), `main.rs` reduced to a thin shim calling
+`atproto_iroh_tauri_lib::run()` for desktop, and Cargo.toml gained a
+`[lib]` `crate-type = ["staticlib", "cdylib", "rlib"]` entry. Desktop
+build re-verified clean after the split. Two smaller real fixes along
+the way: `tauri.conf.json`'s placeholder `"0.0.0"` version isn't valid
+for an Android package (needs ≥0.0.1) — bumped to `0.0.1`; and Gradle's
+default per-CPU-core-parallel dependency resolution tripped real `429
+Too Many Requests` responses from Maven Central against this sandbox's
+shared egress IP, requiring several retries (each one caching more
+before failing on a fresh artifact) before it got lucky enough to
+finish — a global `~/.gradle/gradle.properties`
+(`org.gradle.workers.max=1`, `systemProp.http[s].maxConnections=1`) now
+serializes those downloads so a fresh `gen/android` regeneration
+doesn't need the same luck. `gen/android/` itself stays git-ignored
+(this section already said so before this session; still true — it's a
+regenerated Gradle project, not source).
+
+To reproduce, from this repo or a machine/CI runner with normal disk
+headroom:
 ```
-# Android Studio's own SDK manager is the easiest path; the manual one:
 sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;27.0.12077973"
 export ANDROID_HOME=~/Android/Sdk
 export NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973
 cd crates/atproto-iroh-tauri
-cargo tauri android init   # generates gen/android/ (gradle project) — not committed, generated
-cargo tauri android build  # or `android dev` for a connected device/emulator
+cargo tauri android init
+cargo tauri android build --target aarch64  # or `android dev` for a connected device/emulator
 ```
-Nothing about the Rust-side code is expected to need changes for this —
-the data-dir override and `NetworkPreset::N0` wiring above exist
-specifically so `cargo tauri android init/build` has nothing left to
-improvise once a real SDK/NDK is present. Worth pressure-testing for
-real once that's run somewhere with the disk for it, not assumed clean
-from the code alone.
+**Still not done**: the APK isn't signed, hasn't been installed on a
+real device or emulator (no emulator available in this sandbox to
+actually launch it and click through), and `armv7`/`i686`/`x86_64`
+targets weren't built (only `aarch64`, the target real phones need) —
+worth doing all three for real once there's a device or emulator to
+verify against, the same "worth pressure-testing for real" caveat this
+section always carries for anything that can't be interactively
+clicked through here.
 
 ## Batteries-included app list (Messaging built; rest still a recommendation)
 
