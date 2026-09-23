@@ -68,6 +68,19 @@ pub struct NodeProfile {
     pub neighborhood: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// An id into the client's own built-in sticker set (`DESIGN_BRIEF.md`'s
+    /// Profile Customization section — "even bots need cute stickers"),
+    /// not a blob reference: the art lives in the client, this field just
+    /// picks one. Deliberately a plain string, not an enum — the set is a
+    /// client-side/design concern this crate has no business constraining,
+    /// same reasoning as `NodeCategory` being the one place this repo does
+    /// use a closed enum (it has to match `street-smarts`'s
+    /// `CATEGORY_WEIGHTS` keys exactly, an external contract; stickers have
+    /// no such contract). Added 2026-09-23, additive and backward
+    /// compatible — an older `NodeProfile` with no `avatar` field still
+    /// deserializes fine.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<String>,
     /// Not authoritative — see the lexicon's own description and
     /// `governance.rs`'s fold over the real governance history.
     #[serde(skip_serializing_if = "Option::is_none")]

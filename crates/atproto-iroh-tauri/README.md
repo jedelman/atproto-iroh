@@ -4,12 +4,47 @@ Reference client for `atproto-iroh-core` — see the root `CLAUDE.md`'s
 "Client" section for why Tauri, and `../../SPEC.md` for the protocol
 this is a UI on top of.
 
+## Frontend rebuild (2026-09-23) — React + Vite, in progress
+
+The plain HTML/JS/CSS frontend (`dist/index.html`/`main.js`/`styles.css`,
+the vendored `jsQR`) is **gone**, replaced by a real React + Vite app
+under `src/` per the confirmed `/shape` design brief
+(`DESIGN_BRIEF.md`) — a deliberate departure from the "no bundler, no
+framework" rule this crate held to until now, not a regression from it.
+`dist/` is now a *build output* directory (`.gitignore`'d), regenerated
+by `npm run build` / Tauri's own `beforeBuildCommand`, not source.
+
+**Built and working**: the design-token system (warm-dark palette, Young
+Serif/Hanken Grotesk, from the confirmed mockup artifact), the `Sticker`
+component (built-in blob avatars), the **Feed** screen (the unified
+cross-Table timeline — messages/photos/decisions merged, Table filter
+chips, the pinned-message excerpt), and the **Onboarding** screen
+(sticker + name picker). Both are wired to a real API abstraction
+(`src/api/`) that talks to the actual Tauri backend when running inside
+Tauri and falls back to an in-memory mock backend
+(`src/api/mockClient.ts`) otherwise — see "Mock dataset and tests," below.
+
+**Not yet ported — a real, current gap, not an oversight**: the old
+plain-JS app had working UI for every one of its 28 commands (Messaging
+thread view, Images upload/gallery, Documents with conflict-visibility,
+Governance/Polls, Tagging, Mute, Members/Profile editing, QR generate
+*and* scan, the raw inspector, relay/control). None of that has a React
+screen yet — only Feed and Onboarding exist. Functionally, this rebuild
+currently covers *less* than the app it replaced; it's a deliberate
+trade (a real design direction on two screens, over a complete-but-
+undesigned UI on eight) that needs the remaining screens built to reach
+parity. Table detail (Members-first landing, per DESIGN_BRIEF.md §4) is
+the natural next screen — Feed already links tables by id but nothing
+renders at that route yet.
+
 ## What's real here
 
 - `src-tauri/` is a genuine Tauri 2 app: `atproto-iroh-core` is a normal
   path dependency, no IPC or FFI boundary between UI-adjacent code and
   protocol logic.
-- Twenty-eight commands, each a direct call into the core crate:
+- Twenty-nine commands (28 plus `pins`, added 2026-09-23 alongside
+  `tagging::pins()` in the core crate), each a direct call into the core
+  crate:
   `spawn_node` (loads or generates a persistent `did:iroh` identity and
   starts a real `iroh` node against real on-disk storage — deliberately
   not done at app launch; see `main.rs`'s comment on why), `node_did`,
@@ -266,9 +301,20 @@ this is a UI on top of.
 This proves the wiring, not a usable app. Missing, in roughly the order
 a real client would need them:
 
-- ~~QR scanning.~~ **Built (2026-09-23)** — see "What's real here," above.
-- **Any error/loading state beyond `textContent = "error: ..."`.** Fine
-  for proving the wiring, not fine for anyone else to use.
+- **QR scanning — built earlier today, then removed along with the rest
+  of the plain-JS frontend it lived in.** Not a silent regression:
+  recorded here on purpose. The approach (vendored `jsQR` +
+  `getUserMedia`, no native plugin — the only maintained Tauri
+  barcode-scanner plugin needs an incompatible Tauri 3 alpha) is still
+  the right one and needs porting into a React screen; `jsqr` is
+  already an `npm` dependency of this rebuild for exactly that reason,
+  just not wired to any component yet.
+- **Every screen except Feed and Onboarding** — see "Frontend rebuild,"
+  above, for the full list and why this is a deliberate, temporary step
+  backward in feature coverage, not an oversight.
+- **Any error/loading state beyond a basic "Settling in…"/empty-state
+  message.** Better than the old app's raw `textContent = "error:
+  ..."` but still not a real design pass on error states.
 - **No automatic merge for concurrent doc revisions.** The Shared doc
   section flags the conflict and lets a person load either revision for
   review (see its own bullet above), but reconciling two edits into one
@@ -298,12 +344,70 @@ context, a display — not attempted here, since a headless environment
 has nothing to show a window on regardless of whether the binary itself
 is correct.
 
+**Frontend build, verified 2026-09-23**: `npm install && npm run build`
+(from this directory) runs `tsc -b && vite build` and produces a real
+`dist/` — confirmed by then running `cargo build -p atproto-iroh-tauri`
+against it, clean. `npm test` runs the Vitest suite (10 tests as of this
+writing) against the mock API and the canonical fixtures — see "Mock
+dataset and tests," below. `npm run dev` starts a plain Vite dev server
+on `localhost:1420` (Tauri's `beforeDevCommand`) — since it has no
+`window.__TAURI__`, it automatically uses the mock backend, so the UI is
+directly viewable in an ordinary browser without a real iroh node or a
+GTK/WebKit build at all.
+
+## Mock dataset and tests
+
+`src/mocks/fixtures.ts` is the canonical mock dataset — Jason's explicit
+ask alongside "go ahead and implement": one realistic, small multi-Table
+world (three Tables, five members, messages, an image, a Decision, and
+pins — including one author pinning twice, so the "latest wins" rule has
+something real to prove itself against) used three ways: `src/api/
+mockClient.ts` reads and mutates a copy of it so `npm run dev` in a
+plain browser has real content to render with zero backend; every test
+imports it directly for assertions; and it's the *same* content the
+`/shape` mockup artifact used (Garden Table, Weekend Hikers, New Parents
+Crew), so what a plain-browser `npm run dev` shows matches what was
+designed, not a different placeholder set that happens to compile.
+
+`src/lib/pins.ts` mirrors `atproto-iroh-core`'s `tagging::
+latest_per_author_with_label`/`tagging::pins()` resolution in
+TypeScript (the mock backend has no Rust process to call into) and is
+unit-tested directly against the fixtures in `pins.test.ts` — the same
+"one per author, most recent wins, newest first" property
+`tests/tagging.rs`'s `tags_can_tag_tags_and_pins_resolve_one_per_
+author_by_recency` proves on the Rust side, now proven independently on
+the TS side too. `src/mocks/fixtures.test.ts` checks the dataset's own
+internal consistency (every reference resolves to something real in it)
+rather than trusting it stays coherent as it's edited. `src/screens/
+Feed.test.tsx` is a real React Testing Library render test — proves the
+Feed screen shows real dataset content and that clicking a Table filter
+chip actually filters, not just that the component compiles.
+
+**Known gap, not silently accepted**: `npm audit` reports 7 advisories
+(5 moderate, 1 high, 1 critical) as of this writing, all in dev-only
+tooling (`esbuild`'s dev-server request handling, `vitest`'s mocker,
+`react-router`'s SSR/open-redirect surface) — none of which apply to
+this app's actual runtime (a local Tauri desktop/mobile shell, no SSR,
+no public dev server). `npm audit fix --force` would jump to Vite 8 /
+Vitest 5 / React Router 7, major versions not checked for compatibility
+here — deferred deliberately rather than force-upgraded blind mid an
+already-large change.
+
 ## Styling philosophy
 
-Repo is MIT-licensed specifically so a rougher-but-functional reference
-UI is a fine place to start (Jason's framing, kept verbatim in spirit):
-*"I spent my time in the trenches pushing pixels, I've earned some
-inconsistencies. If people want pretty, they can make it pretty."*
-`dist/styles.css` is intentionally undesigned — system fonts, no visual
-identity, nothing here should be read as this project's design
-direction, because it doesn't have one yet on purpose.
+**Superseded 2026-09-23** — kept below for the historical record this
+document's own practice calls for, not as current guidance. The old
+`dist/styles.css` (deleted along with the rest of the plain-JS
+frontend) really was intentionally undesigned; the confirmed `/shape`
+design brief (`DESIGN_BRIEF.md`) is now this project's real design
+direction — warm-dark, "a shared kitchen table, not a corporate
+dashboard," specific typefaces and an OKLCH palette in `src/styles/
+tokens.css`, not an absence of one.
+
+Original framing, for the record: repo is MIT-licensed specifically so
+a rougher-but-functional reference UI was a fine place to *start*
+(Jason's framing, kept verbatim in spirit): *"I spent my time in the
+trenches pushing pixels, I've earned some inconsistencies. If people
+want pretty, they can make it pretty."* — which is exactly what this
+rebuild is: someone (Jason, this session) deciding it was time to make
+it pretty.

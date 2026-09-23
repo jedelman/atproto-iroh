@@ -25,6 +25,7 @@ async fn a_profile_written_on_one_node_syncs_readable_to_another() -> anyhow::Re
         category: NodeCategory::WorkerCoop,
         neighborhood: Some("Ghent".into()),
         description: None,
+        avatar: None,
         governance_eligible: Some(true),
         created_at: Utc::now(),
     };

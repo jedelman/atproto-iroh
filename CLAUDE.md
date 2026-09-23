@@ -113,14 +113,24 @@ client-side JS; own README has the real Tauri-3-alpha plugin dead end
 this worked around — Shared doc (with conflict-visibility UX), Messaging, Images,
 Tagging (cross-lexicon), Members/Profile, Mute, and governance (real
 `Founding`-based genesis state, not a placeholder) — a plain HTML/JS/CSS
-frontend, no bundler, no framework. **Superseded 2026-09-23**: this
-`dist/` frontend is being rebuilt in React + Vite per the confirmed
-`/shape` design brief (`crates/atproto-iroh-tauri/DESIGN_BRIEF.md`,
-and this document's own "Design context" section below) — a deliberate
-departure from "no bundler, no framework," not a regression from it;
-the 28 Tauri commands and everything else in this paragraph are
-unaffected, since this is a frontend-only rebuild over an unchanged
-backend. Exact command names, what each does,
+frontend, no bundler, no framework. **Superseded 2026-09-23**: that
+`dist/` frontend is deleted, replaced by a real React + Vite app under
+`src/` per the confirmed `/shape` design brief
+(`crates/atproto-iroh-tauri/DESIGN_BRIEF.md`, and this document's own
+"Design context" section below) — a deliberate departure from "no
+bundler, no framework," not a regression from it. Implementation
+started the same day, real but partial: the Feed and Onboarding screens
+are built and tested (a canonical mock dataset + Vitest suite — this
+crate's own README has the detail), every other screen (Table detail,
+Messaging, Images, Documents, Governance UI, Tagging, Mute/Profile
+editing, and QR scanning specifically, which existed once in the old
+frontend and needs re-porting) isn't yet — a real, temporary step back
+in feature coverage in exchange for a real design direction on what
+does exist, not silently accepted. The 29 Tauri commands (28 plus
+`pins`, added alongside `tagging::pins()` this session) are unaffected
+either way, since this is a frontend rebuild over a backend that only
+gained two small additions (`pins`, `NodeProfile.avatar`) for it. Exact
+command names, what each does,
 and what's still missing live in `crates/atproto-iroh-tauri/README.md`,
 kept current there rather than duplicated and re-drifting here; this
 section stays high-level on purpose. The inspector (`namespace::

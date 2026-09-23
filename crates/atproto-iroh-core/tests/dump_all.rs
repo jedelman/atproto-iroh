@@ -28,6 +28,7 @@ async fn dump_all_shows_json_text_and_raw_entries_alike() -> anyhow::Result<()> 
         category: NodeCategory::WorkerCoop,
         neighborhood: None,
         description: None,
+        avatar: None,
         governance_eligible: None,
         created_at: Utc::now(),
     };

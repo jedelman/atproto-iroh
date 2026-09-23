@@ -5,16 +5,25 @@ this brief draws on lives in `../../.impeccable.md` and is summarized in
 root `CLAUDE.md`'s "Design context for the Tauri reference client's UX"
 section — read those first if anything here seems to assume context.
 
-Handoff target: `/impeccable craft` (or equivalent implementation work)
-against this brief. The current plain HTML/JS/CSS frontend
-(`dist/index.html`/`main.js`/`styles.css`) is being replaced with a real
-React + Vite frontend over the same Rust/Tauri backend. **Correction
-(2026-09-23, same day, after Jason's follow-up guidance below)**: this
-is *mostly* a frontend-only rebuild, but not entirely — profile
-stickers need one small, real addition to `atproto-iroh-core`
-(`NodeProfile` gaining an avatar/sticker field). Said plainly here
-rather than letting the earlier "no core-crate changes" claim stand
-uncorrected — see §4's Profile Customization note and §9.
+**Implementation started 2026-09-23, same day.** The plain HTML/JS/CSS
+frontend is gone (`git rm`'d), replaced by a real React + Vite app under
+`src/` — see this crate's own README ("Frontend rebuild" section) for
+exactly what's built (Feed, Onboarding, the design-token system, a
+mock/real API abstraction with a canonical mock dataset) versus what
+isn't yet (every other screen — Table detail, Messaging thread view,
+Images, Documents, Governance UI, Tagging, Mute/Profile editing, QR
+scanning specifically, which was built once already today and needs
+re-porting). This brief stays the reference for what to build; the
+README tracks current implementation status so the two don't drift
+into saying different things about what exists.
+
+**Correction (2026-09-23, same day, after Jason's follow-up guidance
+below)**: this is *mostly* a frontend-only rebuild, but not entirely —
+profile stickers needed one small, real addition to `atproto-iroh-core`
+(`NodeProfile` gaining an avatar/sticker field) — **done**, threaded
+through `create_namespace_with_profile`/`update_profile`. Said plainly
+here rather than letting the earlier "no core-crate changes" claim
+stand uncorrected — see §4's Profile Customization note and §9.
 
 ## 1. Feature Summary
 
@@ -195,14 +204,28 @@ rewriting, now including the sticker set's own personality).
 
 ## 9. Open Questions
 
-- **`tagging::pins()` is core-only so far** — proven live against
-  `atproto-iroh-core` directly, not yet exposed as a Tauri command
-  (`add_tag`/`tags_for` already are; `pins` needs the same one-line
-  wrapper treatment during implementation) or a CLI subcommand.
-- **The sticker/avatar field is a real, small `atproto-iroh-core`
-  change** (`NodeProfile` gaining something like `avatar: Option<
-  String>`, an id into the client's built-in set, not a blob — current
-  schema confirmed to have no such field). Small and backward-compatible
+- **There's no backend concept of a "Table name" yet — found during
+  implementation, not designed around.** A namespace today carries
+  per-member `NodeProfile`s (each author's own name/category/avatar)
+  and a `Founding` claim, but nothing names the *Table itself* — the
+  mockup's "Garden Table," "Weekend Hikers" are namespace-level
+  identity that has no real record to live in. The natural fix, once
+  someone wants it: `namespace::put_text`/`get_text` at a well-known
+  key (e.g. `"table/name"`), written by whoever founds it and read back
+  by resolving the founder's author id from the `Founding` claim
+  (`fold::read_founding`) — no new record type, same idiom `put_text`
+  already exists for. Not built in this pass, deliberately: the React
+  rebuild's canonical mock dataset (`src/mocks/fixtures.ts`) gives
+  Tables real names because it's fixture data under full control; the
+  real (Tauri) backend path currently has nothing to show there and
+  says so in code rather than faking it.
+- ~~`tagging::pins()` is core-only.~~ **Done** — a `pins` Tauri command
+  now wraps it (same `TagView` shape `add_tag`/`tags_for` already
+  return). Still no CLI subcommand for it, unlike `tag`/`tags`.
+- ~~The sticker/avatar field is a real, small `atproto-iroh-core`
+  change.~~ **Done** — `NodeProfile.avatar: Option<String>` added,
+  threaded through `create_namespace_with_profile`/`update_profile`.
+  Small and backward-compatible
   (`skip_serializing_if`, same pattern every other optional `NodeProfile`
   field already uses), but real — flagging so it isn't discovered
   mid-implementation as a surprise.

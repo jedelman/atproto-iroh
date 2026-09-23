@@ -4,7 +4,10 @@
   "version": "0.0.1",
   "identifier": "org.jason-edelman.atproto-iroh",
   "build": {
-    "frontendDist": "../dist"
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
     "withGlobalTauri": true,

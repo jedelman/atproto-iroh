@@ -222,6 +222,7 @@ async fn create_namespace_with_profile(
     state: State<'_, AppState>,
     name: String,
     category: NodeCategory,
+    avatar: Option<String>,
 ) -> Result<String, String> {
     let author = ensure_author(&state).await?;
     let node = state.node.lock().await;
@@ -234,6 +235,7 @@ async fn create_namespace_with_profile(
         category,
         neighborhood: None,
         description: None,
+        avatar,
         governance_eligible: Some(true),
         created_at: chrono::Utc::now(),
     };
@@ -274,6 +276,7 @@ async fn update_profile(
     category: NodeCategory,
     neighborhood: Option<String>,
     description: Option<String>,
+    avatar: Option<String>,
     governance_eligible: Option<bool>,
 ) -> Result<(), String> {
     let author = ensure_author(&state).await?;
@@ -286,6 +289,7 @@ async fn update_profile(
         category,
         neighborhood,
         description,
+        avatar,
         governance_eligible,
         created_at: chrono::Utc::now(),
     };
@@ -771,6 +775,30 @@ async fn tags_for(
         .collect())
 }
 
+/// Every currently-pinned subject in a namespace, one per author, most
+/// recently pinned first — `tagging::pins` unwrapped for the UI. See
+/// `DESIGN_BRIEF.md`'s Layout Strategy: "anyone can pin, one pin per
+/// author, shown in order of recency."
+#[tauri::command]
+async fn pins(state: State<'_, AppState>, namespace_id: String) -> Result<Vec<TagView>, String> {
+    let node = state.node.lock().await;
+    let node = node.as_ref().ok_or("call spawn_node first")?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    let pinned = tagging::pins(node, doc).await.map_err(|e| e.to_string())?;
+    Ok(pinned
+        .into_iter()
+        .map(|(author, rkey, tag)| TagView {
+            author_hex: hex::encode(author.as_bytes()),
+            rkey,
+            subject: tag.subject,
+            label: tag.label,
+        })
+        .collect())
+}
+
 #[derive(serde::Serialize)]
 struct ProposalView {
     author_hex: String,
@@ -974,6 +1002,7 @@ pub fn run() {
             list_muted,
             add_tag,
             tags_for,
+            pins,
             list_proposals,
             governance_state,
             create_proposal,

@@ -1,0 +1,55 @@
+// Real backend: thin wrappers over `invoke()`. Command names are the
+// literal Rust fn names (src-tauri/src/lib.rs); argument keys are
+// camelCase — Tauri v2's command macro defaults to `ArgumentCase::Camel`
+// and converts to each command's real snake_case parameter name
+// (confirmed against the vendored tauri-macros source, not assumed).
+
+import { invoke } from "@tauri-apps/api/core";
+import type { Client } from "./client";
+import type {
+  GovernanceStateView,
+  ImageView,
+  MessageView,
+  NodeProfile,
+  ProfileView,
+  ProposalView,
+  TagView,
+} from "./types";
+
+export const tauriClient: Client = {
+  spawnNode: () => invoke("spawn_node"),
+  nodeDid: () => invoke("node_did"),
+  listNamespaces: () => invoke("list_namespaces"),
+  listTables: async () => {
+    const ids = await invoke<string[]>("list_namespaces");
+    // Honest fallback — see TableSummary's doc comment: no real
+    // "Table name" record exists in the backend yet.
+    return ids.map((id) => ({ id, name: `Table ${id.slice(0, 8)}…` }));
+  },
+  createNamespaceWithProfile: (name, category, avatar) =>
+    invoke("create_namespace_with_profile", { name, category, avatar }),
+  updateProfile: (namespaceId, profile: Omit<NodeProfile, "created_at">) =>
+    invoke("update_profile", {
+      namespaceId,
+      name: profile.name,
+      category: profile.category,
+      neighborhood: profile.neighborhood ?? null,
+      description: profile.description ?? null,
+      avatar: profile.avatar ?? null,
+      governanceEligible: profile.governance_eligible ?? null,
+    }),
+  listProfiles: (namespaceId) =>
+    invoke<ProfileView[]>("list_profiles", { namespaceId }),
+  listMessages: (namespaceId) =>
+    invoke<MessageView[]>("list_messages", { namespaceId }),
+  listImages: (namespaceId) => invoke<ImageView[]>("list_images", { namespaceId }),
+  listProposals: (namespaceId) =>
+    invoke<ProposalView[]>("list_proposals", { namespaceId }),
+  governanceState: (namespaceId) =>
+    invoke<GovernanceStateView>("governance_state", { namespaceId }),
+  pins: (namespaceId) => invoke<TagView[]>("pins", { namespaceId }),
+  tagsFor: (namespaceId, subject) =>
+    invoke<TagView[]>("tags_for", { namespaceId, subject }),
+  addTag: (namespaceId, subject, label) =>
+    invoke<string>("add_tag", { namespaceId, subject, label }),
+};

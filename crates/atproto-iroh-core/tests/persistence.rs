@@ -36,6 +36,7 @@ async fn identity_and_namespace_content_survive_a_restart() -> anyhow::Result<()
         category: NodeCategory::WorkerCoop,
         neighborhood: None,
         description: None,
+        avatar: None,
         governance_eligible: Some(true),
         created_at: Utc::now(),
     };
