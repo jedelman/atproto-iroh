@@ -41,6 +41,7 @@ const joinedTableIds = new Set<string>(TABLES_YOU_ARE_IN);
 // Per-Table map of docId → revisions, oldest first — same shape doc_history
 // returns for real, so useDocConflict's logic never has to know it's mocked.
 const docs: Record<string, Record<string, DocRevision[]>> = structuredClone(DOC_REVISIONS);
+const proposals: Record<string, typeof PROPOSALS[string]> = structuredClone(PROPOSALS);
 
 let nextRkeySeq = 9000;
 function mockRkey() {
@@ -130,11 +131,48 @@ export const mockClient: Client = {
   },
 
   async listProposals(namespaceId) {
-    return PROPOSALS[namespaceId] ?? [];
+    return proposals[namespaceId] ?? [];
   },
 
   async governanceState(namespaceId) {
     return GOVERNANCE_STATE[namespaceId] ?? { eligible_hex: [] };
+  },
+
+  async createDecision(namespaceId, title, deadlineHours) {
+    const rkey = mockRkey();
+    proposals[namespaceId] ??= [];
+    proposals[namespaceId].push({
+      author_hex: SELF_AUTHOR_HEX,
+      rkey,
+      proposal: {
+        title,
+        class: "general",
+        deadline: new Date(Date.now() + deadlineHours * 3_600_000).toISOString(),
+        created_at: new Date().toISOString(),
+      },
+      status: { state: "open", blockers: [] },
+    });
+    return rkey;
+  },
+
+  async signalDecision(namespaceId, proposalAuthorHex, proposalRkey, signalType) {
+    const rkey = mockRkey();
+    const target = (proposals[namespaceId] ?? []).find(
+      (p) => p.author_hex === proposalAuthorHex && p.rkey === proposalRkey,
+    );
+    // A real ratification depends on the full fold (eligibility,
+    // per-class threshold, and whether the deadline has passed —
+    // fold::fold_namespace) — this mock only simulates the one signal
+    // this UI actually acts on immediately: a Block puts the decision
+    // in a visibly-objected state. Consent doesn't fast-forward
+    // ratification here, same as the real thing (it only ratifies once
+    // the deadline passes with too few blockers).
+    if (target && signalType === "block" && target.status.state !== "ratified") {
+      const blockers = target.status.state === "blocked" ? target.status.blockers : [];
+      if (!blockers.includes(SELF_AUTHOR_HEX)) blockers.push(SELF_AUTHOR_HEX);
+      target.status = { state: "blocked", blockers };
+    }
+    return rkey;
   },
 
   async pins(namespaceId) {

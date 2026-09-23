@@ -3,7 +3,7 @@
 // welcome message if one exists, then Messages, Decisions, Photos,
 // Shared docs."
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   api,
   type ImageView,
@@ -26,7 +26,7 @@ interface TableState {
   eligibleHex: string[];
 }
 
-export function useTable(tableId: string): TableState {
+export function useTable(tableId: string): TableState & { refreshProposals: () => Promise<void> } {
   const [state, setState] = useState<TableState>({
     loading: true,
     table: null,
@@ -70,7 +70,20 @@ export function useTable(tableId: string): TableState {
     };
   }, [tableId]);
 
-  return state;
+  // Re-fetches just proposals + governance state — used after creating a
+  // decision/poll or signaling on one, so the Decisions tab reflects the
+  // real fold result rather than a locally-guessed optimistic status
+  // (ratification depends on eligibility/threshold math this hook
+  // shouldn't duplicate — see fold::fold_namespace).
+  const refreshProposals = useCallback(async () => {
+    const [proposals, governance] = await Promise.all([
+      api.listProposals(tableId),
+      api.governanceState(tableId),
+    ]);
+    setState((prev) => ({ ...prev, proposals, eligibleHex: governance.eligible_hex }));
+  }, [tableId]);
+
+  return { ...state, refreshProposals };
 }
 
 export function profileFor(members: ProfileView[], authorHex: string): NodeProfile | undefined {

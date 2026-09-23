@@ -2,8 +2,7 @@
 // original primary user action, still true once someone deliberately
 // opens a specific Table rather than living in the merged Feed), led by
 // the Table's pinned message(s), then tabs for Messages/Decisions/
-// Photos. Shared docs is a real, named gap here — no doc-related
-// Client methods exist yet (README's "Frontend rebuild" section).
+// Photos/Shared doc.
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
@@ -11,15 +10,14 @@ import { Sticker } from "../components/Sticker";
 import { profileFor, useTable } from "../hooks/useTable";
 import { TABLE_DOC_ID, useTableDoc } from "../hooks/useTableDoc";
 import { hasPossibleConflict } from "../lib/docConflict";
-import { api, type MessageView, type ProfileView } from "../api";
+import { api, type MessageView, type ProfileView, type ProposalView } from "../api";
 
 type Tab = "messages" | "decisions" | "photos" | "docs";
 
 export function TableDetail() {
   const { id } = useParams<{ id: string }>();
-  const { loading, table, members, pins, messages, images, proposals, eligibleHex } = useTable(
-    id ?? "",
-  );
+  const { loading, table, members, pins, messages, images, proposals, eligibleHex, refreshProposals } =
+    useTable(id ?? "");
   const [tab, setTab] = useState<Tab>("messages");
 
   // Optimistic sends layered on top of the hook's own fetch — DESIGN_
@@ -164,33 +162,14 @@ export function TableDetail() {
           </>
         )}
 
-        {tab === "decisions" &&
-          (proposals.length === 0 ? (
-            <EmptyTab text="No decisions yet." />
-          ) : (
-            proposals.map((p) => (
-              <div key={p.rkey} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 14 }}>
-                <p style={{ margin: "0 0 6px", fontSize: 14.5, fontWeight: 600 }}>{p.proposal.title}</p>
-                {p.proposal.description && (
-                  <p style={{ margin: 0, fontSize: 13, color: "var(--text-2)" }}>{p.proposal.description}</p>
-                )}
-                <span
-                  style={{
-                    display: "inline-block",
-                    marginTop: 8,
-                    background: "var(--surface-3)",
-                    color: "var(--sage)",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    padding: "3px 9px",
-                    borderRadius: 999,
-                  }}
-                >
-                  {p.status.state === "open" ? "Open" : p.status.state === "ratified" ? "Passed" : "Blocked"}
-                </span>
-              </div>
-            ))
-          ))}
+        {tab === "decisions" && (
+          <DecisionsPanel
+            tableId={id ?? ""}
+            proposals={proposals}
+            eligibleHex={eligibleHex}
+            onChanged={refreshProposals}
+          />
+        )}
 
         {tab === "photos" &&
           (images.length === 0 ? (
@@ -297,6 +276,170 @@ function Composer({ tableId, onSent }: { tableId: string; onSent: (m: MessageVie
       >
         Send
       </button>
+    </div>
+  );
+}
+
+function DecisionsPanel({
+  tableId,
+  proposals,
+  eligibleHex,
+  onChanged,
+}: {
+  tableId: string;
+  proposals: ProposalView[];
+  eligibleHex: string[];
+  onChanged: () => void;
+}) {
+  const [selfAuthorHex, setSelfAuthorHex] = useState<string | null>(null);
+  const [title, setTitle] = useState("");
+  const [deadlineHours, setDeadlineHours] = useState(72);
+  const [creating, setCreating] = useState(false);
+  const [voting, setVoting] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const did = await api.nodeDid();
+      setSelfAuthorHex(did?.replace(/^did:iroh:/, "") ?? null);
+    })();
+  }, []);
+
+  const canWeighIn = selfAuthorHex !== null && eligibleHex.includes(selfAuthorHex);
+
+  async function create() {
+    const trimmed = title.trim();
+    if (!trimmed || creating) return;
+    setCreating(true);
+    try {
+      await api.createDecision(tableId, trimmed, deadlineHours);
+      setTitle("");
+      onChanged();
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function signal(p: ProposalView, signalType: "consent" | "block") {
+    const key = `${p.rkey}:${signalType}`;
+    setVoting(key);
+    try {
+      await api.signalDecision(tableId, p.author_hex, p.rkey, signalType);
+      onChanged();
+    } finally {
+      setVoting(null);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 14 }}>
+        <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+          New decision
+        </p>
+        <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--text-3)" }}>
+          Not a majority vote — this passes automatically once the window
+          closes, unless enough people object. Silence counts as support.
+        </p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="What are you deciding?"
+            style={{
+              flexGrow: 1,
+              minWidth: 160,
+              background: "var(--bg)",
+              border: "1px solid var(--border)",
+              borderRadius: 10,
+              color: "var(--text)",
+              padding: "9px 12px",
+              fontSize: 13.5,
+            }}
+          />
+          <select
+            value={deadlineHours}
+            onChange={(e) => setDeadlineHours(Number(e.target.value))}
+            style={{
+              background: "var(--bg)",
+              border: "1px solid var(--border)",
+              borderRadius: 10,
+              color: "var(--text)",
+              padding: "9px 10px",
+              fontSize: 13.5,
+            }}
+          >
+            <option value={24}>1 day</option>
+            <option value={72}>3 days</option>
+            <option value={168}>1 week</option>
+          </select>
+          <button
+            onClick={create}
+            disabled={!title.trim() || creating}
+            style={{
+              background: "var(--accent)",
+              color: "var(--ink)",
+              border: "none",
+              borderRadius: 10,
+              padding: "9px 16px",
+              fontSize: 13.5,
+              fontWeight: 700,
+              opacity: !title.trim() || creating ? 0.5 : 1,
+            }}
+          >
+            Propose
+          </button>
+        </div>
+      </div>
+
+      {proposals.length === 0 ? (
+        <EmptyTab text="No decisions yet." />
+      ) : (
+        proposals.map((p) => (
+          <div key={p.rkey} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 14 }}>
+            <p style={{ margin: "0 0 6px", fontSize: 14.5, fontWeight: 600 }}>{p.proposal.title}</p>
+            {p.proposal.description && (
+              <p style={{ margin: 0, fontSize: 13, color: "var(--text-2)" }}>{p.proposal.description}</p>
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+              <span
+                style={{
+                  display: "inline-block",
+                  background: "var(--surface-3)",
+                  color: p.status.state === "blocked" ? "var(--rose)" : "var(--sage)",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  padding: "3px 9px",
+                  borderRadius: 999,
+                }}
+              >
+                {p.status.state === "open"
+                  ? `Open${p.status.blockers.length ? `, ${p.status.blockers.length} objection(s)` : ""}`
+                  : p.status.state === "ratified"
+                    ? "Passed"
+                    : `Did not pass (${p.status.blockers.length} objection(s))`}
+              </span>
+              {canWeighIn && p.status.state === "open" && (
+                <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+                  <button
+                    onClick={() => signal(p, "consent")}
+                    disabled={voting !== null}
+                    style={{ background: "none", border: "1px solid var(--border)", borderRadius: 10, color: "var(--sage)", padding: "5px 12px", fontSize: 12.5, fontWeight: 600 }}
+                  >
+                    Support
+                  </button>
+                  <button
+                    onClick={() => signal(p, "block")}
+                    disabled={voting !== null}
+                    style={{ background: "none", border: "1px solid var(--border)", borderRadius: 10, color: "var(--rose)", padding: "5px 12px", fontSize: 12.5, fontWeight: 600 }}
+                  >
+                    Object
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        ))
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 // content, the pinned message, and tab switching all actually work,
 // not just that routing resolves to the right component.
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -77,6 +77,31 @@ describe("TableDetail", () => {
     await userEvent.click(screen.getByText("Decisions"));
     expect(screen.getByText("Move tool-shed hours to weekends")).toBeInTheDocument();
     expect(screen.getByText("Open")).toBeInTheDocument();
+  });
+
+  it("proposes a new decision, then objects to it and sees the status flip", async () => {
+    // SELF_AUTHOR_HEX is governance-eligible on the Garden Table
+    // (fixtures.ts's GOVERNANCE_STATE), so Support/Object should render.
+    renderTable(gardenTableId);
+    await waitFor(() => expect(screen.getByText("The Garden Table")).toBeInTheDocument());
+    await userEvent.click(screen.getByText("Decisions"));
+
+    await userEvent.type(
+      screen.getByPlaceholderText("What are you deciding?"),
+      "Add a second compost bin",
+    );
+    await userEvent.click(screen.getByText("Propose"));
+
+    expect(await screen.findByText("Add a second compost bin")).toBeInTheDocument();
+    // The input clears after a successful propose.
+    expect(screen.getByPlaceholderText("What are you deciding?")).toHaveValue("");
+
+    const card = screen.getByText("Add a second compost bin").closest("div")!;
+    await userEvent.click(within(card).getByText("Object"));
+
+    await waitFor(() =>
+      expect(within(card).getByText(/Did not pass/)).toBeInTheDocument(),
+    );
   });
 
   it("switches to the Shared doc tab, shows the real conflict banner, and lets you pick a revision", async () => {

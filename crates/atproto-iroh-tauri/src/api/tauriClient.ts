@@ -63,6 +63,24 @@ export const tauriClient: Client = {
     invoke<ProposalView[]>("list_proposals", { namespaceId }),
   governanceState: (namespaceId) =>
     invoke<GovernanceStateView>("governance_state", { namespaceId }),
+  createDecision: (namespaceId, title, deadlineHours) =>
+    invoke<string>("create_proposal", {
+      namespaceId,
+      title,
+      description: null,
+      class: "general",
+      deadlineHours,
+      subjectMemberHex: null,
+      policyChange: null,
+    }),
+  signalDecision: (namespaceId, proposalAuthorHex, proposalRkey, signalType) =>
+    invoke<string>("create_signal", {
+      namespaceId,
+      proposalAuthorHex,
+      proposalRkey,
+      signalType,
+      text: null,
+    }),
   pins: (namespaceId) => invoke<TagView[]>("pins", { namespaceId }),
   tagsFor: (namespaceId, subject) =>
     invoke<TagView[]>("tags_for", { namespaceId, subject }),

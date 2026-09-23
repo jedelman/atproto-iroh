@@ -60,6 +60,8 @@ export type GovernanceClass =
   | "changePolicy"
   | "general";
 
+export type SignalType = "consent" | "stand_aside" | "block" | "abstain" | "exit";
+
 export interface PolicyValue {
   window_seconds: number;
   block_threshold: number;

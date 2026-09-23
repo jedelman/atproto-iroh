@@ -18,6 +18,7 @@ import type {
   NodeProfile,
   ProfileView,
   ProposalView,
+  SignalType,
   TagView,
 } from "./types";
 
@@ -56,6 +57,23 @@ export interface Client {
   listImages(namespaceId: string): Promise<ImageView[]>;
   listProposals(namespaceId: string): Promise<ProposalView[]>;
   governanceState(namespaceId: string): Promise<GovernanceStateView>;
+  /** Posts a new decision/poll — hardcoded to `GovernanceClass::General`,
+   * same relabeling the old plain-JS app's Polls section used
+   * (CLAUDE.md's batteries-included list): "not a majority vote" is real,
+   * not just copy — this ratifies by default absent enough Block
+   * signals, same objection-window mechanic as every other decision
+   * here. No subject-member/policy-change UI — that's real cosigner-
+   * governance complexity out of scope for this pass. */
+  createDecision(namespaceId: string, title: string, deadlineHours: number): Promise<string>;
+  /** Signals on a decision — `proposalAuthorHex`/`proposalRkey` name the
+   * target since `RecordIdentifier` is `(namespace, author, key)`,
+   * SPEC.md §3.4, not just a key. */
+  signalDecision(
+    namespaceId: string,
+    proposalAuthorHex: string,
+    proposalRkey: string,
+    signalType: SignalType,
+  ): Promise<string>;
   pins(namespaceId: string): Promise<TagView[]>;
   tagsFor(namespaceId: string, subject: string): Promise<TagView[]>;
   addTag(namespaceId: string, subject: string, label: string): Promise<string>;

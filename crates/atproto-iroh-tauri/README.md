@@ -32,7 +32,7 @@ the filter chips below it filter the Feed in place instead; the dashed
 "+ Join" circle at the end of that strip (and the Feed's own empty
 state) opens Join.
 
-Two of the Table detail tabs are new since Composing shipped:
+Three of the Table detail tabs are new since Composing shipped:
 - **Composer** (Messages tab) — optimistic: the sent message appears
   immediately, resolved through the real self author hex via
   `nodeDid()` rather than a placeholder, so it renders through
@@ -54,6 +54,26 @@ Two of the Table detail tabs are new since Composing shipped:
   (seeded from `DOC_REVISIONS` in fixtures.ts, which now includes a
   genuine concurrent-edit case on the Garden Table so the conflict
   banner has something real to trigger on, not just a contrived test).
+- **Decisions** — a propose form (title + a 1 day/3 day/1 week deadline
+  picker, no subject-member/policy-change UI — that's real cosigner-
+  governance complexity out of scope for this pass) plus Support/Object
+  buttons on each open decision, gated on the real self author hex
+  being in the Table's `eligible_hex`. Deliberately hardcoded to
+  `GovernanceClass::General` — the exact same relabeling the old
+  plain-JS app's Polls section used (CLAUDE.md's batteries-included
+  list): calls the same `create_proposal`/`create_signal` commands the
+  full governance model uses, no new mechanism. Worded carefully, not
+  just built: the form's hint text says outright **"not a majority
+  vote"** — this ratifies by default absent enough objection, and
+  calling it a plain "propose" form without that line would have
+  implied ordinary vote-counting behavior it doesn't have.
+  `useTable`'s `refreshProposals` re-fetches proposals + governance
+  state after a propose/signal (re-running the real fold, not
+  guessing the new ratification status client-side) — `mockClient`'s
+  own signal handling is honest about the same limit: it only
+  simulates the one thing this UI acts on immediately (a Block moves a
+  decision to a visibly-objected state), since real ratification also
+  depends on the deadline passing, which the mock doesn't simulate.
 
 **Screenshot-verified, not just test-verified** — a real Playwright +
 headless-Chromium pipeline against `npm run dev`'s mock-backed browser
@@ -69,8 +89,9 @@ afterward so they'd be caught by the suite next time, not just eyeballs.
 **Not yet ported — a real, current gap, not an oversight**: the old
 plain-JS app had working UI for every one of its 28 commands (Messaging
 thread view *outside* a Table's own tab — reply-to isn't wired into the
-Composer yet, Images upload, Governance/Polls creation forms, Tagging,
-Mute, Members/Profile editing, QR generate *and* scan, the raw
+Composer yet, Images upload, the full Governance UI beyond General-class
+decisions — no admit/remove-cosigner or policy-change proposal forms,
+Tagging, Mute, Members/Profile editing, QR generate *and* scan, the raw
 inspector, relay/control). Functionally, this rebuild still covers
 *less* than the app it replaced; a deliberate trade (a real design
 direction on four screens, over a complete-but-undesigned UI on eight)
