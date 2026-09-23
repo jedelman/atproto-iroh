@@ -10,6 +10,7 @@
 // layer in this pass).
 
 import type {
+  DocRevision,
   GovernanceStateView,
   ImageView,
   MessageView,
@@ -58,4 +59,16 @@ export interface Client {
   pins(namespaceId: string): Promise<TagView[]>;
   tagsFor(namespaceId: string, subject: string): Promise<TagView[]>;
   addTag(namespaceId: string, subject: string, label: string): Promise<string>;
+  /** Writes a new, immutable revision — never overwrites a prior one.
+   * See `namespace::save_document_revision`'s doc comment for the CRDT
+   * data-loss case this replaced. Returns the new revision's rev key. */
+  docSave(namespaceId: string, docId: string, text: string): Promise<string>;
+  /** The latest revision by key order — a default for "what to show
+   * right now," not a claim it's the semantically correct pick if two
+   * edits landed close together. Pair with docHistory for that. */
+  docLoad(namespaceId: string, docId: string): Promise<DocRevision | null>;
+  /** Every revision, oldest first — the UI's hook for surfacing "someone
+   * else edited this while you were offline" instead of silently
+   * picking a side. */
+  docHistory(namespaceId: string, docId: string): Promise<DocRevision[]>;
 }

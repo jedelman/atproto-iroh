@@ -20,21 +20,40 @@ component (built-in blob avatars), the **Feed** screen (the unified
 cross-Table timeline — messages/photos/decisions merged, Table filter
 chips, the pinned-message excerpt), the **Onboarding** screen (sticker +
 name picker), the **Table detail** screen (Members-first landing, the
-Table's pinned message(s) in full, tabbed Messages/Decisions/Photos —
-DESIGN_BRIEF.md §4, plus a message **Composer** in the Messages tab,
-optimistic — the sent message appears immediately, resolved through the
-real self author hex via `nodeDid()` rather than a placeholder, so it
-renders exactly the way the synced-back copy eventually will), and the
-**Join** screen (camera QR scan, re-ported
-from the old plain-JS app onto the real `jsqr` npm package, with a
-paste-a-ticket fallback). All wired to a real API abstraction
-(`src/api/`) that talks to the actual Tauri backend when running inside
-Tauri and falls back to an in-memory mock backend
+Table's pinned message(s) in full, tabbed Messages/Decisions/Photos/
+Shared doc — DESIGN_BRIEF.md §4), and the **Join** screen (camera QR
+scan, re-ported from the old plain-JS app onto the real `jsqr` npm
+package, with a paste-a-ticket fallback). All wired to a real API
+abstraction (`src/api/`) that talks to the actual Tauri backend when
+running inside Tauri and falls back to an in-memory mock backend
 (`src/api/mockClient.ts`) otherwise — see "Mock dataset and tests," below.
 Tapping a Table's sticker in the Feed navigates to its detail screen;
 the filter chips below it filter the Feed in place instead; the dashed
 "+ Join" circle at the end of that strip (and the Feed's own empty
 state) opens Join.
+
+Two of the Table detail tabs are new since Composing shipped:
+- **Composer** (Messages tab) — optimistic: the sent message appears
+  immediately, resolved through the real self author hex via
+  `nodeDid()` rather than a placeholder, so it renders through
+  `profileFor()` exactly the way the synced-back copy eventually will.
+- **Shared doc** — one fixed doc id (`"notes"`) per Table for now (no
+  doc picker/creation UI yet, a real named gap); re-ports the old
+  plain-JS app's conflict-visibility logic (`src/lib/docConflict.ts`,
+  unit-tested — `hasPossibleConflict` diffs the two most recent
+  revisions' rev timestamps as `BigInt`s, flags it only when they came
+  from *different authors* within 5 minutes of each other, not just
+  "there's more than one revision") rather than reinventing it. Every
+  revision in history gets a "Use this" button that loads its text into
+  the edit box for review — **still no automatic merge**, resolution is
+  a human reading both and re-saving, same as the old app; this closes
+  the visibility gap, not the "diff and merge text" problem, which was
+  never in scope. `docSave`/`docLoad`/`docHistory` added to `Client`,
+  implemented against the real `doc_save`/`doc_load`/`doc_history`
+  commands and against `mockClient`'s own per-Table doc-revision map
+  (seeded from `DOC_REVISIONS` in fixtures.ts, which now includes a
+  genuine concurrent-edit case on the Garden Table so the conflict
+  banner has something real to trigger on, not just a contrived test).
 
 **Screenshot-verified, not just test-verified** — a real Playwright +
 headless-Chromium pipeline against `npm run dev`'s mock-backed browser
@@ -50,13 +69,12 @@ afterward so they'd be caught by the suite next time, not just eyeballs.
 **Not yet ported — a real, current gap, not an oversight**: the old
 plain-JS app had working UI for every one of its 28 commands (Messaging
 thread view *outside* a Table's own tab — reply-to isn't wired into the
-Composer yet, Images upload, Documents with
-conflict-visibility, Governance/Polls creation forms, Tagging, Mute,
-Members/Profile editing, QR generate *and* scan, the raw inspector,
-relay/control). Functionally, this rebuild still covers *less* than the
-app it replaced; a deliberate trade (a real design direction on four
-screens, over a complete-but-undesigned UI on eight) that needs the
-remaining screens built to reach parity.
+Composer yet, Images upload, Governance/Polls creation forms, Tagging,
+Mute, Members/Profile editing, QR generate *and* scan, the raw
+inspector, relay/control). Functionally, this rebuild still covers
+*less* than the app it replaced; a deliberate trade (a real design
+direction on four screens, over a complete-but-undesigned UI on eight)
+that needs the remaining screens built to reach parity.
 
 ## What's real here
 

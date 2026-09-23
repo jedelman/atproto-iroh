@@ -79,6 +79,27 @@ describe("TableDetail", () => {
     expect(screen.getByText("Open")).toBeInTheDocument();
   });
 
+  it("switches to the Shared doc tab, shows the real conflict banner, and lets you pick a revision", async () => {
+    // The Garden Table's fixture doc has a genuine concurrent-edit
+    // case built in (fixtures.ts's DOC_REVISIONS): Marisol's revision,
+    // then Devon's 120s later — inside the 5-minute window, different
+    // authors, so hasPossibleConflict should flag it for real, not
+    // just render a banner unconditionally.
+    renderTable(gardenTableId);
+    await waitFor(() => expect(screen.getByText("The Garden Table")).toBeInTheDocument());
+
+    await userEvent.click(screen.getByText("Shared doc"));
+    expect(await screen.findByText(/possible conflict/)).toBeInTheDocument();
+
+    // The latest revision (Devon's) is what loads into the box by default.
+    expect(screen.getByDisplayValue(/Workday moved to Sunday/)).toBeInTheDocument();
+
+    // "Use this" on an older revision loads it into the box for review.
+    const useButtons = screen.getAllByText("Use this");
+    await userEvent.click(useButtons[useButtons.length - 1]); // the earliest revision
+    expect(screen.getByDisplayValue(/Draft: workday Saturday/)).toBeInTheDocument();
+  });
+
   it("shows a real not-found state for an unknown table id", async () => {
     renderTable("table-does-not-exist");
     await waitFor(() =>

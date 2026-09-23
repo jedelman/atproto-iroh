@@ -7,6 +7,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Client } from "./client";
 import type {
+  DocRevision,
   GovernanceStateView,
   ImageView,
   MessageView,
@@ -15,6 +16,13 @@ import type {
   ProposalView,
   TagView,
 } from "./types";
+
+// doc_load/doc_history return (rev, author_hex, text) tuples on the
+// Rust side (src-tauri/src/lib.rs) — reshaped to DocRevision here so
+// the rest of the frontend never has to know the wire shape.
+function tupleToRevision([rev, author_hex, text]: [string, string, string]): DocRevision {
+  return { rev, author_hex, text };
+}
 
 export const tauriClient: Client = {
   spawnNode: () => invoke("spawn_node"),
@@ -60,4 +68,20 @@ export const tauriClient: Client = {
     invoke<TagView[]>("tags_for", { namespaceId, subject }),
   addTag: (namespaceId, subject, label) =>
     invoke<string>("add_tag", { namespaceId, subject, label }),
+  docSave: (namespaceId, docId, text) =>
+    invoke<string>("doc_save", { namespaceId, docId, text }),
+  docLoad: async (namespaceId, docId) => {
+    const result = await invoke<[string, string, string] | null>("doc_load", {
+      namespaceId,
+      docId,
+    });
+    return result ? tupleToRevision(result) : null;
+  },
+  docHistory: async (namespaceId, docId) => {
+    const revisions = await invoke<[string, string, string][]>("doc_history", {
+      namespaceId,
+      docId,
+    });
+    return revisions.map(tupleToRevision);
+  },
 };

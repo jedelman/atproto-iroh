@@ -229,10 +229,44 @@ export const TAGS: Record<string, TagView[]> = {
 };
 
 /** Doc revisions, per Table → per doc id, oldest first (matches
- * `list_document_revisions`' ordering). */
+ * `list_document_revisions`' ordering). Rev strings are zero-padded,
+ * chronologically-sortable microsecond timestamps, same shape as the
+ * real `namespace::new_entry_key()` — the conflict-detection logic in
+ * `useDocConflict` diffs the two most recent revisions' rev values as
+ * `BigInt`s, so these have to actually parse and compare correctly,
+ * not just look plausible. */
+const DOC_BASE = 1_700_000_000_000_000;
+function docRev(offsetMicros: number): string {
+  return String(DOC_BASE + offsetMicros).padStart(19, "0");
+}
+
 export const DOC_REVISIONS: Record<string, Record<string, { author_hex: string; rev: string; text: string }[]>> = {
+  [GARDEN_TABLE_ID]: {
+    // One fixed doc id per Table, "notes" — matches useTableDoc's
+    // TABLE_DOC_ID (no doc picker/creation UI yet, a real named gap).
+    notes: [
+      {
+        author_hex: AUTHORS.marisol,
+        rev: docRev(0),
+        text: "Draft: workday Saturday 10am, bring gloves.",
+      },
+      {
+        author_hex: AUTHORS.marisol,
+        rev: docRev(600_000_000),
+        text: "Workday Saturday 10am — bring gloves, we'll do the back beds.",
+      },
+      {
+        // 120s after the revision above, different author — inside the
+        // 5-minute concurrent-edit window, so this pair is the one real
+        // conflict case in the mock dataset.
+        author_hex: AUTHORS.devon,
+        rev: docRev(600_000_000 + 120_000_000),
+        text: "Workday moved to Sunday 10am instead — gloves provided this time.",
+      },
+    ],
+  },
   [PARENTS_TABLE_ID]: {
-    "meal-train": [
+    notes: [
       {
         author_hex: AUTHORS.devon,
         rev: "0001",

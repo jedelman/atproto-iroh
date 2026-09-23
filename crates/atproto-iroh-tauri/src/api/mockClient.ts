@@ -7,6 +7,7 @@
 
 import type { Client } from "./client";
 import {
+  DOC_REVISIONS,
   GOVERNANCE_STATE,
   IMAGES,
   MESSAGES,
@@ -20,7 +21,7 @@ import {
 } from "../mocks/fixtures";
 import { latestPerAuthorWithLabel } from "../lib/pins";
 import { PIN_LABEL } from "./types";
-import type { NodeProfile } from "./types";
+import type { DocRevision, NodeProfile } from "./types";
 
 const profiles: Record<string, Record<string, NodeProfile>> = {};
 for (const table of TABLES) {
@@ -37,6 +38,9 @@ for (const table of TABLES) {
 const tags: Record<string, typeof TAGS[string]> = structuredClone(TAGS);
 const messages: Record<string, typeof MESSAGES[string]> = structuredClone(MESSAGES);
 const joinedTableIds = new Set<string>(TABLES_YOU_ARE_IN);
+// Per-Table map of docId → revisions, oldest first — same shape doc_history
+// returns for real, so useDocConflict's logic never has to know it's mocked.
+const docs: Record<string, Record<string, DocRevision[]>> = structuredClone(DOC_REVISIONS);
 
 let nextRkeySeq = 9000;
 function mockRkey() {
@@ -146,5 +150,22 @@ export const mockClient: Client = {
     tags[namespaceId] ??= [];
     tags[namespaceId].push({ author_hex: SELF_AUTHOR_HEX, rkey, subject, label });
     return rkey;
+  },
+
+  async docSave(namespaceId, docId, text) {
+    const rev = mockRkey();
+    docs[namespaceId] ??= {};
+    docs[namespaceId][docId] ??= [];
+    docs[namespaceId][docId].push({ author_hex: SELF_AUTHOR_HEX, rev, text });
+    return rev;
+  },
+
+  async docLoad(namespaceId, docId) {
+    const revisions = docs[namespaceId]?.[docId] ?? [];
+    return revisions.length ? revisions[revisions.length - 1] : null;
+  },
+
+  async docHistory(namespaceId, docId) {
+    return docs[namespaceId]?.[docId] ?? [];
   },
 };

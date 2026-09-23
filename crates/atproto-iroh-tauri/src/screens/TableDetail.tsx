@@ -5,13 +5,15 @@
 // Photos. Shared docs is a real, named gap here — no doc-related
 // Client methods exist yet (README's "Frontend rebuild" section).
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Sticker } from "../components/Sticker";
 import { profileFor, useTable } from "../hooks/useTable";
-import { api, type MessageView } from "../api";
+import { TABLE_DOC_ID, useTableDoc } from "../hooks/useTableDoc";
+import { hasPossibleConflict } from "../lib/docConflict";
+import { api, type MessageView, type ProfileView } from "../api";
 
-type Tab = "messages" | "decisions" | "photos";
+type Tab = "messages" | "decisions" | "photos" | "docs";
 
 export function TableDetail() {
   const { id } = useParams<{ id: string }>();
@@ -123,6 +125,9 @@ export function TableDetail() {
         <TabButton active={tab === "photos"} onClick={() => setTab("photos")}>
           Photos
         </TabButton>
+        <TabButton active={tab === "docs"} onClick={() => setTab("docs")}>
+          Shared doc
+        </TabButton>
       </div>
 
       <div style={{ flexGrow: 1, padding: "var(--space-lg) var(--space-xl)", display: "flex", flexDirection: "column", gap: 12 }}>
@@ -200,6 +205,8 @@ export function TableDetail() {
               ))}
             </div>
           ))}
+
+        {tab === "docs" && <SharedDoc tableId={id ?? ""} members={members} />}
       </div>
     </div>
   );
@@ -290,6 +297,150 @@ function Composer({ tableId, onSent }: { tableId: string; onSent: (m: MessageVie
       >
         Send
       </button>
+    </div>
+  );
+}
+
+function SharedDoc({ tableId, members }: { tableId: string; members: ProfileView[] }) {
+  const { loading, revisions, refresh } = useTableDoc(tableId);
+  const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const latest = revisions[revisions.length - 1] ?? null;
+
+  // "Load" always refreshes full history alongside it — one click, not
+  // two, since a stale history is exactly what would hide a real
+  // conflict from someone who only ever clicks the button that shows
+  // the text.
+  useEffect(() => {
+    if (!loading && latest) setText(latest.text);
+  }, [loading, latest?.rev]);
+
+  async function save() {
+    if (!text.trim() || saving) return;
+    setSaving(true);
+    try {
+      await api.docSave(tableId, TABLE_DOC_ID, text);
+      setStatus("saved");
+      await refresh();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return <EmptyTab text="Loading…" />;
+  }
+
+  const conflict = hasPossibleConflict(revisions);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div>
+        <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+          Notes — shared by everyone here
+        </p>
+        <textarea
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setStatus(null);
+          }}
+          rows={6}
+          style={{
+            width: "100%",
+            resize: "vertical",
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+            color: "var(--text)",
+            padding: "12px 14px",
+            fontSize: 14,
+            fontFamily: "inherit",
+            boxSizing: "border-box",
+          }}
+        />
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+          <button
+            onClick={save}
+            disabled={!text.trim() || saving}
+            style={{
+              background: "var(--accent)",
+              color: "var(--ink)",
+              border: "none",
+              borderRadius: 12,
+              padding: "9px 18px",
+              fontSize: 14,
+              fontWeight: 700,
+              opacity: !text.trim() || saving ? 0.5 : 1,
+            }}
+          >
+            Save
+          </button>
+          {status && <span style={{ fontSize: 12.5, color: "var(--text-3)" }}>{status}</span>}
+        </div>
+      </div>
+
+      {conflict && (
+        <div
+          role="alert"
+          style={{ background: "var(--surface)", border: "1px solid var(--rose)", borderRadius: 12, padding: "10px 14px" }}
+        >
+          <p style={{ margin: 0, fontSize: 13, color: "var(--rose)", fontWeight: 600 }}>
+            ⚠ possible conflict
+          </p>
+          <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "var(--text-2)" }}>
+            The two most recent revisions came from different people within 5
+            minutes of each other. Review both below and pick one with "Use
+            this" before saving again — nothing is merged automatically.
+          </p>
+        </div>
+      )}
+
+      {revisions.length === 0 ? (
+        <EmptyTab text="No revisions yet — write something above." />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+            History
+          </p>
+          {[...revisions].reverse().map((rev) => {
+            const author = profileFor(members, rev.author_hex);
+            return (
+              <div
+                key={rev.rev}
+                style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 14px", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}
+              >
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <Sticker id={author?.avatar} size={18} />
+                    <span style={{ fontSize: 12.5, fontWeight: 600 }}>{author?.name ?? "Someone"}</span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: 13, color: "var(--text-2)", whiteSpace: "pre-wrap" }}>{rev.text}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setText(rev.text);
+                    setStatus(`loaded ${author?.name ?? "that"} revision into the box — edit and Save to resolve`);
+                  }}
+                  style={{
+                    flexShrink: 0,
+                    background: "none",
+                    border: "1px solid var(--border)",
+                    borderRadius: 10,
+                    color: "var(--text-2)",
+                    padding: "5px 10px",
+                    fontSize: 12,
+                  }}
+                >
+                  Use this
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
