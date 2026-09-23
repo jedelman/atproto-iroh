@@ -80,14 +80,36 @@ must never leak into everyday flows; must clear the AI-slop test
   below), then Messages, Decisions, Photos, Shared docs — tabs or a
   persistent side rail, not a dense multi-section scroll like today's
   `index.html`.
-- **Pinned welcome post, per Table.** An admin-authored message (reuses
-  the existing `messaging` + `tagging` primitives — tag a message
-  `"pinned"`, no backend changes needed for this one) shown at the top
-  whenever anyone opens that Table, and excerpted in the Feed the first
-  time a person sees a new Table's activity. This is the concrete
-  answer to "whose table is this, and what's it for" — the single
-  highest-leverage piece of content in the whole app for making a new
-  Table feel like somewhere specific rather than an empty namespace.
+- **Pinned messages, per Table — resolved and built (2026-09-23):
+  anyone can pin, one pin per author, shown newest-pin-first.** Not
+  admin-only after all — Jason's exact spec, matching `tagging.rs`'s
+  existing open/append-only posture rather than inventing a new
+  permission concept. Backend is real and live-tested, not just
+  designed: `tagging::PIN_LABEL` (`"system:pin"`, reserved under the
+  namespaced-label convention below so a user's own unrelated "pin"
+  tag can never collide with this behavior) and `tagging::pins()`
+  (list every current pin, one per author, most recent wins, newest
+  first — mirrors `governance::latest_signal_per_author`'s exact
+  dedup shape). `tests/tagging.rs`'s
+  `tags_can_tag_tags_and_pins_resolve_one_per_author_by_recency` proves
+  the resolution rule against real synced history, not just unit logic.
+  Shown at the top of a Table whenever anyone opens it, and the most
+  recent one excerpted in the Feed the first time a person sees a new
+  Table's activity — the concrete answer to "whose table is this, and
+  what's it for."
+- **Namespaced tag labels — resolved and built (2026-09-23): "tags are
+  monads."** `tagging::Tag.label` stays a plain free-text `String` (no
+  schema change), but this crate now reserves the `system:` prefix for
+  labels it gives built-in meaning to (`system:pin` is the first),
+  leaving every other label — bare words, or a user's own `topic:`/
+  `mood:`/whatever convention — fully open for people to extend the
+  ontology themselves, exactly as asked. The deeper point behind "tags
+  are monads" is also now confirmed true, not just architecturally
+  plausible: a `Tag`'s `subject` can point at *another* `Tag`
+  (`record_ref` never restricted the collection a subject names), and
+  `tests/tagging.rs` proves this round-trips through real two-node sync
+  — tagging a tag, reacting to a tag, or building further layers on top
+  of this one primitive all fall out for free.
 - **Profile customization: built-in stickers now, custom upload later.**
   Every member gets a sticker/avatar, not just a name — confirmed
   explicitly: "even bots need cute stickers." A curated, on-brand
@@ -173,14 +195,10 @@ rewriting, now including the sticker set's own personality).
 
 ## 9. Open Questions
 
-- **Who can pin a message?** `tagging.rs` is deliberately open/
-  append-only (anyone can tag anything) — "admin-authored pinned
-  message" implies some notion of who's allowed to set the pin, which
-  doesn't exist yet as a concept. Options: restrict "pinned" to
-  governance-eligible members (reuses the existing eligibility
-  machinery, no new primitive), or leave it fully open and let the UI
-  just show the most recent one someone tagged pinned (simpler,
-  possibly too open). Needs a decision before backend work starts.
+- **`tagging::pins()` is core-only so far** — proven live against
+  `atproto-iroh-core` directly, not yet exposed as a Tauri command
+  (`add_tag`/`tags_for` already are; `pins` needs the same one-line
+  wrapper treatment during implementation) or a CLI subcommand.
 - **The sticker/avatar field is a real, small `atproto-iroh-core`
   change** (`NodeProfile` gaining something like `avatar: Option<
   String>`, an id into the client's built-in set, not a blob — current

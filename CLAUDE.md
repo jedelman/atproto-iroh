@@ -235,19 +235,37 @@ folded into the brief rather than treated as separate: a **unified
 cross-Table feed is the home screen** (Bluesky-shaped, explicitly
 reacting to Discord's per-server-switcher becoming overwhelming past a
 couple of servers — Tables and tags become feed filters, not separate
-destinations); a **pinned, admin-authored welcome message per Table**
-(reuses existing messaging+tagging, no backend change); and **built-in
-profile stickers** as part of first-run onboarding ("even bots need
-cute stickers"), custom upload deliberately deferred.
+destinations); **pinned messages per Table** (reuses existing
+messaging+tagging, resolved as fully open — see below, not admin-only
+as first floated); and **built-in profile stickers** as part of
+first-run onboarding ("even bots need cute stickers"), custom upload
+deliberately deferred.
+
+**"Who can pin?" — resolved the same day: anyone, one pin per author,
+newest first.** Jason's exact spec, matching `tagging.rs`'s existing
+open/append-only posture rather than inventing a new permission
+concept. **Built and live-tested, not just designed**: `tagging::
+PIN_LABEL` (`"system:pin"`) and `tagging::pins()` (latest-per-author
+resolution, same dedup shape as `governance::latest_signal_per_author`)
+— `tests/tagging.rs`'s `tags_can_tag_tags_and_pins_resolve_one_per_
+author_by_recency` proves the resolution rule against real synced
+history. This also confirmed the deeper "**tags are monads**" claim
+behind it: `Tag.subject` can point at *another* `Tag` — proven live,
+not just architecturally plausible — so this crate now reserves a
+`system:` label-namespace prefix for its own built-in meanings while
+leaving every other label open for user-invented ontology, no schema
+change either way (`tagging.rs`'s own top doc comment has the full
+reasoning). Not yet wired to a Tauri command or CLI subcommand — core
+only so far.
 
 **Correction to "nothing about `atproto-iroh-core` changes"**: mostly
 still true, but not entirely — profile stickers need one small, real
 addition (`NodeProfile` gaining an avatar/sticker field, confirmed
-absent from the current schema). Said plainly rather than left standing
-wrong; `DESIGN_BRIEF.md`'s intro has the same correction with full
-detail, and its Open Questions section has the real backend/architecture
-questions this raised (who's allowed to pin a message, feed-query
-architecture at scale).
+absent from the current schema); pins needed none (`tagging.rs`'s
+`label` was already a free string). Said plainly rather than left
+standing wrong; `DESIGN_BRIEF.md`'s intro has the same correction with
+full detail, and its Open Questions section has what's still actually
+open (feed-query architecture at scale, the sticker field itself).
 
 ## Observability: release builds only, telemetry rides the sync primitive
 

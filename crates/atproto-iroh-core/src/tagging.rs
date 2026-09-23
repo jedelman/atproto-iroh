@@ -14,6 +14,28 @@
 //! touched, and its own writer's capability isn't required to tag it (any
 //! writer in the namespace can tag anything, same open-by-default
 //! posture the inbox/messaging primitives already have).
+//!
+//! **Composable by construction, not by extension** (Jason's framing,
+//! 2026-09-23: "tags are monads") — a `Tag` is itself an ordinary
+//! `Record` in the `network.essmesh.tag` collection, and `subject` is a
+//! generic `records::record_ref` that names *any* record in *any*
+//! collection, including this one. Nothing stops a `Tag`'s `subject`
+//! from being another `Tag`'s own `record_ref` — confirmed live in
+//! `tests/tagging.rs`, not just true in principle — so tagging a tag,
+//! reacting to a tag, or building a whole folksonomy on top of this one
+//! primitive all fall out for free, no new record type per layer.
+//!
+//! **Namespaced labels, so built-in behavior and user-invented ontology
+//! never collide.** `label` stays a plain free-text `String` — no schema
+//! change — but this module reserves the `system:` prefix for labels
+//! this crate itself gives meaning to (currently just `system:pin`,
+//! below). Anything else — bare words, a user's own `topic:`/`mood:`/
+//! whatever convention — is the open, user-extensible ontology Jason's
+//! ask was about: this module never validates or restricts it, only
+//! reserves its own corner of the namespace so a feature built here
+//! can't be shadowed by an unrelated tag someone else invents.
+
+use std::collections::HashMap;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -68,6 +90,54 @@ pub async fn tags_for(node: &Node, doc: &Doc, subject: &str) -> Result<Vec<(Auth
         .into_iter()
         .filter(|(_, _, tag)| tag.subject == subject)
         .collect())
+}
+
+/// Reserved label for the pinned-welcome-message feature (`DESIGN_BRIEF.
+/// md`'s Layout Strategy) — "anyone can pin, one pin per author, shown
+/// in order of recency" (Jason's exact spec, 2026-09-23). Lives under
+/// the `system:` namespace reserved in this module's own top doc
+/// comment, so a user inventing an unrelated tag literally named
+/// "pin" for their own purposes can never collide with this behavior.
+pub const PIN_LABEL: &str = "system:pin";
+
+/// Collapses a tag list down to each author's single most recent tag
+/// with the given `label`, newest first — the exact resolution rule a
+/// "one per author, shown in order of recency" feature needs (pins
+/// now; anything with the same shape later, which is why this takes a
+/// `label` rather than being pin-specific). Same dedup shape as
+/// `governance::latest_signal_per_author` — "only the most recent
+/// counts" is already an established pattern in this crate, not a new
+/// one invented for this feature.
+pub fn latest_per_author_with_label(
+    tags: &[(AuthorId, String, Tag)],
+    label: &str,
+) -> Vec<(AuthorId, String, Tag)> {
+    let mut latest: HashMap<AuthorId, (AuthorId, String, Tag)> = HashMap::new();
+    for (author, rkey, tag) in tags {
+        if tag.label != label {
+            continue;
+        }
+        match latest.get(author) {
+            Some((_, _, existing)) if existing.created_at >= tag.created_at => {}
+            _ => {
+                latest.insert(*author, (*author, rkey.clone(), tag.clone()));
+            }
+        }
+    }
+    let mut result: Vec<_> = latest.into_values().collect();
+    result.sort_by(|a, b| b.2.created_at.cmp(&a.2.created_at));
+    result
+}
+
+/// Every currently-pinned subject in `doc`, one per author, most
+/// recently pinned first — `list_all_tags` plus
+/// `latest_per_author_with_label(PIN_LABEL)` unwrapped for a caller that
+/// just wants "what's pinned right now." Scans every tag in the
+/// namespace (same O(every tag) caveat `list_all_tags`'s own doc
+/// comment already names), fine at reference-app scale.
+pub async fn pins(node: &Node, doc: &Doc) -> Result<Vec<(AuthorId, String, Tag)>> {
+    let tags = list_all_tags(node, doc).await?;
+    Ok(latest_per_author_with_label(&tags, PIN_LABEL))
 }
 
 #[cfg(test)]
