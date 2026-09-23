@@ -39,7 +39,7 @@ SPEC.md's 2026-09-22 CRDT note) and the Tauri "Shared doc" UI is wired to
 it, including a conflict-visibility pass (Documents UX, batteries list
 below) — not just the primitive existing unused.
 
-Two clients now, both real: the Tauri reference app (28 commands — see
+Two clients now, both real: the Tauri reference app (30 commands — see
 "Client" below) and `crates/atproto-iroh-cli`, a one-shot-process Linux
 CLI plus a `serve` mode for anything that needs to stay reachable (own
 README, including a real bug it found and fixed live: a `share` ticket
@@ -119,18 +119,29 @@ frontend, no bundler, no framework. **Superseded 2026-09-23**: that
 (`crates/atproto-iroh-tauri/DESIGN_BRIEF.md`, and this document's own
 "Design context" section below) — a deliberate departure from "no
 bundler, no framework," not a regression from it. Implementation
-started the same day, real but partial: the Feed and Onboarding screens
-are built and tested (a canonical mock dataset + Vitest suite — this
-crate's own README has the detail), every other screen (Table detail,
-Messaging, Images, Documents, Governance UI, Tagging, Mute/Profile
-editing, and QR scanning specifically, which existed once in the old
-frontend and needs re-porting) isn't yet — a real, temporary step back
-in feature coverage in exchange for a real design direction on what
-does exist, not silently accepted. The 29 Tauri commands (28 plus
-`pins`, added alongside `tagging::pins()` this session) are unaffected
+started the same day and kept going across the rest of it: **seven
+screens now built and tested** (a canonical mock dataset + a Vitest
+suite that grew to 33 tests as each screen landed — this crate's own
+README has the detail) — Feed, Onboarding, Table detail (Members-first
+landing, pinned messages, and five tabs: Messages with a real optimistic
+Composer and per-message Tagging/browse-by-tag, Decisions with real
+propose/Support/Object forms, Photos with real byte-verified upload,
+and Shared doc with conflict-visibility UX), Join (QR scan + paste
+fallback), Profile edit (per-Table, since `NodeProfile` is per-namespace),
+and Mute (global, with real content filtering in the Feed and Table
+detail, not just an inert list). What's left: Messaging thread view
+*outside* a Table's own tab (no reply-to yet), the full Governance UI
+beyond General-class decisions (no admit/remove-cosigner or
+policy-change forms), Tagging on Images/Shared docs (Messages only),
+QR *generation*, the raw inspector, and relay/control — a real,
+narrower gap now, not the wholesale step back this section used to
+describe; `crates/atproto-iroh-tauri/README.md`'s own "Not yet ported"
+list is kept current there rather than duplicated and re-drifting here.
+The 30 Tauri commands (28 plus `pins`/`list_all_tags`, added alongside
+their `tagging::` core-crate counterparts this session) are unaffected
 either way, since this is a frontend rebuild over a backend that only
-gained two small additions (`pins`, `NodeProfile.avatar`) for it. Exact
-command names, what each does,
+gained three small additions (`pins`, `list_all_tags`,
+`NodeProfile.avatar`) for it. Exact command names, what each does,
 and what's still missing live in `crates/atproto-iroh-tauri/README.md`,
 kept current there rather than duplicated and re-drifting here; this
 section stays high-level on purpose. The inspector (`namespace::
