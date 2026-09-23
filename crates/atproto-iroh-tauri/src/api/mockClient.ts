@@ -22,7 +22,15 @@ import type { NodeProfile } from "./types";
 
 const profiles: Record<string, Record<string, NodeProfile>> = {};
 for (const table of TABLES) {
-  profiles[table.id] = { ...PROFILES };
+  // Only this Table's real members — found via screenshot, not the
+  // (passing) test suite: every table was seeding *all* PROFILES
+  // regardless of TABLES[].memberAuthorHexes, so a Table detail screen
+  // showed people who'd never joined it.
+  profiles[table.id] = Object.fromEntries(
+    table.memberAuthorHexes
+      .filter((hex) => hex in PROFILES)
+      .map((hex) => [hex, PROFILES[hex]]),
+  );
 }
 const tags: Record<string, typeof TAGS[string]> = structuredClone(TAGS);
 const messages: Record<string, typeof MESSAGES[string]> = structuredClone(MESSAGES);

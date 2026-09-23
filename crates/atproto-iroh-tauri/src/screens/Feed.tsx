@@ -5,6 +5,7 @@
 // your people, this is just us" before the feed itself.
 
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Sticker } from "../components/Sticker";
 import { useFeed, type FeedItem } from "../hooks/useFeed";
 import { parseRecordRef } from "../lib/recordRef";
@@ -80,13 +81,10 @@ export function Feed() {
             style={{ display: "flex", gap: 18, padding: "4px var(--space-xl) var(--space-lg)", overflowX: "auto" }}
           >
             {tables.map((table) => (
-              <button
+              <Link
                 key={table.id}
-                onClick={() => setFilter(filter.kind === "table" && filter.id === table.id ? { kind: "all" } : { kind: "table", id: table.id })}
-                aria-pressed={filter.kind === "table" && filter.id === table.id}
+                to={`/table/${table.id}`}
                 style={{
-                  background: "none",
-                  border: "none",
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
@@ -94,7 +92,7 @@ export function Feed() {
                   flexShrink: 0,
                 }}
               >
-                <Sticker id={tableAvatar(table.id)} size={52} ring={filter.kind === "table" && filter.id === table.id} />
+                <Sticker id={tableAvatar(table.id)} size={52} />
                 <span
                   style={{
                     fontSize: 10.5,
@@ -111,7 +109,7 @@ export function Feed() {
                 >
                   {table.name}
                 </span>
-              </button>
+              </Link>
             ))}
           </div>
 

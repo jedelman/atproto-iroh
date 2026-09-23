@@ -18,24 +18,36 @@ by `npm run build` / Tauri's own `beforeBuildCommand`, not source.
 Serif/Hanken Grotesk, from the confirmed mockup artifact), the `Sticker`
 component (built-in blob avatars), the **Feed** screen (the unified
 cross-Table timeline — messages/photos/decisions merged, Table filter
-chips, the pinned-message excerpt), and the **Onboarding** screen
-(sticker + name picker). Both are wired to a real API abstraction
+chips, the pinned-message excerpt), the **Onboarding** screen (sticker +
+name picker), and the **Table detail** screen (Members-first landing,
+the Table's pinned message(s) in full, tabbed Messages/Decisions/
+Photos — DESIGN_BRIEF.md §4). All wired to a real API abstraction
 (`src/api/`) that talks to the actual Tauri backend when running inside
 Tauri and falls back to an in-memory mock backend
 (`src/api/mockClient.ts`) otherwise — see "Mock dataset and tests," below.
+Tapping a Table's sticker in the Feed navigates to its detail screen;
+the filter chips below it filter the Feed in place instead.
+
+**Screenshot-verified, not just test-verified** — a real Playwright +
+headless-Chromium pipeline against `npm run dev`'s mock-backed browser
+session caught three real bugs the type-checker and the test suite both
+missed: table names truncating illegibly, a pinned excerpt silently
+falling back to placeholder text (a dangling fixture reference — a real
+message never existed at that pinned subject), and Table detail showing
+*every* mock member on *every* table instead of each table's real
+members (`mockClient.ts` was seeding all tables from the same full
+profile set). All three fixed, and turned into real test assertions
+afterward so they'd be caught by the suite next time, not just eyeballs.
 
 **Not yet ported — a real, current gap, not an oversight**: the old
 plain-JS app had working UI for every one of its 28 commands (Messaging
-thread view, Images upload/gallery, Documents with conflict-visibility,
-Governance/Polls, Tagging, Mute, Members/Profile editing, QR generate
-*and* scan, the raw inspector, relay/control). None of that has a React
-screen yet — only Feed and Onboarding exist. Functionally, this rebuild
-currently covers *less* than the app it replaced; it's a deliberate
-trade (a real design direction on two screens, over a complete-but-
-undesigned UI on eight) that needs the remaining screens built to reach
-parity. Table detail (Members-first landing, per DESIGN_BRIEF.md §4) is
-the natural next screen — Feed already links tables by id but nothing
-renders at that route yet.
+thread view *outside* a Table's own tab, Images upload, Documents with
+conflict-visibility, Governance/Polls creation forms, Tagging, Mute,
+Members/Profile editing, QR generate *and* scan, the raw inspector,
+relay/control). Functionally, this rebuild still covers *less* than the
+app it replaced; a deliberate trade (a real design direction on three
+screens, over a complete-but-undesigned UI on eight) that needs the
+remaining screens built to reach parity.
 
 ## What's real here
 

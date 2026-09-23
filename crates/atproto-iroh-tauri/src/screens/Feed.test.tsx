@@ -4,12 +4,24 @@
 // it compiles.
 
 import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { Feed } from "./Feed";
 
+// Feed links each Table's avatar to /table/:id (react-router's <Link>),
+// which throws outside a Router context — MemoryRouter is the
+// lightweight one for tests, no real navigation needed.
+function renderFeed() {
+  return render(
+    <MemoryRouter>
+      <Feed />
+    </MemoryRouter>,
+  );
+}
+
 describe("Feed", () => {
   it("renders every table, the pinned excerpt, and a decision's status", async () => {
-    render(<Feed />);
+    renderFeed();
 
     // Each table's name renders twice by design (the "your people" strip
     // and its filter chip) — assert presence via getAllByText, not
@@ -39,7 +51,7 @@ describe("Feed", () => {
 
   it("filters to one table when its chip is clicked", async () => {
     const { default: userEvent } = await import("@testing-library/user-event");
-    render(<Feed />);
+    renderFeed();
     await waitFor(() => expect(screen.getAllByText("The Garden Table").length).toBeGreaterThan(0));
 
     const chips = screen.getAllByText("Weekend Hikers");
