@@ -49,14 +49,16 @@ Images, Tagging — cross-lexicon by construction — and Documents UX);
 see that section for exactly what's still just a recommendation
 (Search, Calendar, and the deliberately-not-building-it presence case).
 
-What's still genuinely unbuilt: a real APK now exists (2026-09-23,
-built and inspected in this sandbox — federation-model section has the
-full account, including a real Rust-side fix it required despite an
-earlier claim that none would be needed) but it's unsigned, untested on
-an actual device/emulator, and only built for `aarch64`, not the other
-three Android ABIs; QR scanning (generation only); mute/profile UI has
-no CLI parity for profile specifically; and no thumbnailing/format
-validation on images.
+What's still genuinely unbuilt: real APKs now exist for all four
+Android ABIs (2026-09-23, built, size-optimized, and the arm64 one
+debug-signed and sent to Jason for device testing — federation-model
+section has the full account, including a real Rust-side fix the build
+required despite an earlier claim that none would be needed) but none
+have actually been installed and clicked through on a real device or
+emulator yet (none available in this sandbox), and there's no real
+release keystore, only a local throwaway debug one; QR scanning
+(generation only); mute/profile UI has no CLI parity for profile
+specifically; and no thumbnailing/format validation on images.
 If a future `iroh-docs` upgrade or new finding turns any of the resolved
 SPEC.md forks out to be wrong, don't patch around it quietly — revise
 the relevant section the same way every previous revision is recorded,
@@ -566,6 +568,36 @@ doesn't need the same luck. `gen/android/` itself stays git-ignored
 (this section already said so before this session; still true — it's a
 regenerated Gradle project, not source).
 
+**Follow-up the same day: all four ABIs built, size fixed, signed and
+sent.** `--debug` for all four ABIs at once exhausted the sandbox's
+whole disk allowance (debug's `debuginfo=2` makes each target several
+times larger than release — this is exactly why the Observability
+section above now says release, not debug, is the default going
+forward, not just in principle). Recovered by building release, one ABI
+at a time, then a single combined `cargo tauri android build --target
+aarch64 --target armv7 --target i686 --target x86_64` — note that
+*each separate* `--target` invocation only bundles that one ABI into
+the "universal" APK; getting one real four-ABI universal APK needs all
+targets named in the same invocation. Also found: an unstripped release
+`.so` ran 28-42MB per ABI, a 155MB universal APK and 30-45MB
+split-per-ABI APKs — too big to be a usable download. Fixed in
+`Cargo.toml`'s `[profile.release]`: `strip = true` alone only got
+arm64's `.so` to 28MB; adding `lto = true`, `opt-level = "z"`,
+`codegen-units = 1` got it to 18.8MB (APK 21.4MB) — verified by
+rebuilding and inspecting the actual APK contents each time, not
+assumed from the flags alone. `panic = "abort"` deliberately left out —
+real size lever left on the table, but it changes unwinding semantics
+and nothing in this stack (iroh/tauri/wry) was checked for reliance on
+`catch_unwind`; not worth the risk once LTO alone hit the target.
+
+**Signed and delivered.** A throwaway local debug keystore
+(`~/.android/debug.keystore`, generated with `keytool`, standard debug
+alias/password) signed the arm64 split APK; `apksigner verify`
+confirmed real v2/v3 scheme signatures, not just a zero exit code. Sent
+directly to Jason for device testing — this keystore is local-only,
+never meant for real distribution, and would need a real release
+keystore before this app goes anywhere beyond Jason's own devices.
+
 To reproduce, from this repo or a machine/CI runner with normal disk
 headroom:
 ```
@@ -574,16 +606,19 @@ export ANDROID_HOME=~/Android/Sdk
 export NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973
 cd crates/atproto-iroh-tauri
 cargo tauri android init
-cargo tauri android build --target aarch64  # or `android dev` for a connected device/emulator
+cargo tauri android build --target aarch64 --target armv7 --target i686 --target x86_64 --split-per-abi
+# sign each ABI's APK before installing on a real device:
+apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android \
+  --key-pass pass:android --ks-key-alias androiddebugkey <apk-path>
 ```
-**Still not done**: the APK isn't signed, hasn't been installed on a
-real device or emulator (no emulator available in this sandbox to
-actually launch it and click through), and `armv7`/`i686`/`x86_64`
-targets weren't built (only `aarch64`, the target real phones need) —
-worth doing all three for real once there's a device or emulator to
-verify against, the same "worth pressure-testing for real" caveat this
-section always carries for anything that can't be interactively
-clicked through here.
+**Still not done**: hasn't actually been installed on a real device or
+emulator (no emulator available in this sandbox to launch and click
+through — Jason will do that with his mobile lab); no real release
+keystore; `armv7`/`i686`/`x86_64` are built but only arm64 was
+signed/sent (same `apksigner` command above covers the others). Worth
+pressure-testing for real once there's a device to verify against, the
+same caveat this section always carries for anything that can't be
+interactively clicked through here.
 
 ## Batteries-included app list (Messaging built; rest still a recommendation)
 
