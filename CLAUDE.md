@@ -172,6 +172,47 @@ seam becomes obvious once a few such PRs or separate apps actually
 exist, extract it then, from evidence, the same way this repo's own
 crate boundaries got decided.
 
+## Design context for the Tauri reference client's UX
+
+Resolved 2026-09-23, ahead of a real design pass (`/shape`) on
+`crates/atproto-iroh-tauri`'s frontend — the reference UI has been
+deliberately plain up to now ("functional, not precious," `dist/`'s own
+tagline), and this is the direction for moving past that. Full detail
+in `.impeccable.md` (design skills read that file directly); summarized
+here per this document's own practice of keeping every resolved
+decision visible in one place, not scattered.
+
+**Users: broad, not activist- or cooperative-specific**, even though the
+protocol's own origin (root README) was a cooperative/solidarity-economy
+case. A friend group, a family, a book club, a mutual-aid crew — anyone
+coordinating privately without handing it to a platform. Non-technical,
+sometimes tech-hostile (CLAUDE.md's batteries-included section already
+established this) — the UI needs zero required understanding of
+capabilities, `did:iroh`, or tickets to use day to day; that machinery
+stays available for the curious, never a prerequisite for anyone else.
+
+**Brand personality: warm and communal — "a shared kitchen table, not a
+corporate dashboard."** Handmade, personal, willing to be a little
+imperfect on purpose rather than sanded to generic-SaaS smoothness.
+Explicitly turned down two other live options during the design
+interview ("calm/trustworthy fintech" and "sharp/utilitarian
+infrastructure") in favor of this one.
+
+**Theme: dark default, deliberately warm-dark rather than tech-dark.**
+The governance/messaging usage pattern (checked at odd hours, often on a
+phone) favors dark on its own; the warmth has to come from color
+temperature and type choice on top of that, not from defaulting to
+light instead. Concretely: warm neutrals (a hint of brown/amber in the
+grays, not blue-black) and a genuinely warm accent hue — explicitly
+rejecting the reflexive cyan/purple "AI dark mode" palette. No specific
+reference sites given; full creative latitude on execution.
+
+**One UX responsibility worth naming explicitly**: the governance
+model's "not a majority vote" framing (ratifies by default, absent
+enough objection) is unfamiliar to most people. The UI carries real
+weight in making silence-means-consent read as calm and legible, not as
+a loophole or a trick — this is a design problem, not just a copy one.
+
 ## Observability: release builds only, telemetry rides the sync primitive
 
 Jason's standing constraint (2026-09-23): **he usually won't have a
