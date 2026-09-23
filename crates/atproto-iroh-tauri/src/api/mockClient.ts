@@ -122,7 +122,14 @@ export const mockClient: Client = {
   },
 
   async listMessages(namespaceId) {
-    return messages[namespaceId] ?? [];
+    // A copy, not the live array — found via a real React bug this
+    // session: mockClient methods that returned the mutable array
+    // reference directly meant a subsequent push() mutated the exact
+    // array a caller had already stored in state, so React's
+    // Object.is bailout silently dropped the re-render even though
+    // the underlying data had genuinely changed (useTags.ts's own
+    // comment has the full story).
+    return [...(messages[namespaceId] ?? [])];
   },
 
   async sendMessage(namespaceId, text) {
@@ -141,7 +148,7 @@ export const mockClient: Client = {
   },
 
   async listImages(namespaceId) {
-    return images[namespaceId] ?? [];
+    return [...(images[namespaceId] ?? [])];
   },
 
   async uploadImage(namespaceId, bytes, contentType, caption) {
@@ -164,7 +171,7 @@ export const mockClient: Client = {
   },
 
   async listProposals(namespaceId) {
-    return proposals[namespaceId] ?? [];
+    return [...(proposals[namespaceId] ?? [])];
   },
 
   async governanceState(namespaceId) {
@@ -223,6 +230,10 @@ export const mockClient: Client = {
     return rkey;
   },
 
+  async listAllTags(namespaceId) {
+    return [...(tags[namespaceId] ?? [])];
+  },
+
   async docSave(namespaceId, docId, text) {
     const rev = mockRkey();
     docs[namespaceId] ??= {};
@@ -237,6 +248,6 @@ export const mockClient: Client = {
   },
 
   async docHistory(namespaceId, docId) {
-    return docs[namespaceId]?.[docId] ?? [];
+    return [...(docs[namespaceId]?.[docId] ?? [])];
   },
 };

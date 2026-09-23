@@ -9,8 +9,9 @@ import { useParams, Link } from "react-router-dom";
 import { Sticker } from "../components/Sticker";
 import { profileFor, useTable } from "../hooks/useTable";
 import { TABLE_DOC_ID, useTableDoc } from "../hooks/useTableDoc";
+import { useTags } from "../hooks/useTags";
 import { hasPossibleConflict } from "../lib/docConflict";
-import { api, type ImageView, type MessageView, type ProfileView, type ProposalView } from "../api";
+import { api, type ImageView, type MessageView, type ProfileView, type ProposalView, type TagView } from "../api";
 
 type Tab = "messages" | "decisions" | "photos" | "docs";
 
@@ -35,6 +36,16 @@ export function TableDetail() {
 
   const [uploadedImages, setUploadedImages] = useState<ImageView[]>([]);
   const allImages = useMemo(() => [...uploadedImages, ...images], [uploadedImages, images]);
+
+  const { userLabels, tagsBySubject, refresh: refreshTags } = useTags(id ?? "");
+  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
+  const visibleMessages = useMemo(
+    () =>
+      activeTagFilter === null
+        ? allMessages
+        : allMessages.filter((m) => (tagsBySubject.get(m.subject) ?? []).some((t) => t.label === activeTagFilter)),
+    [allMessages, tagsBySubject, activeTagFilter],
+  );
 
   if (loading) {
     return (
@@ -138,10 +149,31 @@ export function TableDetail() {
               tableId={id ?? ""}
               onSent={(m) => setSentMessages((prev) => [m, ...prev])}
             />
-            {allMessages.length === 0 ? (
-              <EmptyTab text="No messages yet — be the first to say something." />
+            {userLabels.length > 0 && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {activeTagFilter && (
+                  <FilterChip label="All" active={false} onClick={() => setActiveTagFilter(null)} />
+                )}
+                {userLabels.map((label) => (
+                  <FilterChip
+                    key={label}
+                    label={label}
+                    active={activeTagFilter === label}
+                    onClick={() => setActiveTagFilter(activeTagFilter === label ? null : label)}
+                  />
+                ))}
+              </div>
+            )}
+            {visibleMessages.length === 0 ? (
+              <EmptyTab
+                text={
+                  activeTagFilter
+                    ? `No messages tagged "${activeTagFilter}".`
+                    : "No messages yet — be the first to say something."
+                }
+              />
             ) : (
-              allMessages.map((m) => {
+              visibleMessages.map((m) => {
                 // No special-casing for "you" here: a member's own
                 // profile in *this* Table is looked up the same way as
                 // anyone else's. If it resolves to "Someone", that's
@@ -157,7 +189,13 @@ export function TableDetail() {
                       <Sticker id={author?.avatar} size={24} />
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{author?.name ?? "Someone"}</span>
                     </div>
-                    <p style={{ margin: 0, fontSize: 14, color: "var(--text)", lineHeight: 1.55 }}>{m.text}</p>
+                    <p style={{ margin: "0 0 8px", fontSize: 14, color: "var(--text)", lineHeight: 1.55 }}>{m.text}</p>
+                    <MessageTags
+                      tableId={id ?? ""}
+                      subject={m.subject}
+                      tags={tagsBySubject.get(m.subject) ?? []}
+                      onTagged={refreshTags}
+                    />
                   </div>
                 );
               })
@@ -205,6 +243,98 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
     >
       {children}
     </button>
+  );
+}
+
+function FilterChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: active ? "var(--accent)" : "var(--surface)",
+        color: active ? "var(--ink)" : "var(--text-2)",
+        border: "1px solid " + (active ? "var(--accent)" : "var(--border)"),
+        borderRadius: 999,
+        padding: "4px 12px",
+        fontSize: 12.5,
+        fontWeight: 600,
+      }}
+    >
+      {`#${label}`}
+    </button>
+  );
+}
+
+function MessageTags({
+  tableId,
+  subject,
+  tags,
+  onTagged,
+}: {
+  tableId: string;
+  subject: string;
+  tags: TagView[];
+  onTagged: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [label, setLabel] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    const trimmed = label.trim();
+    if (!trimmed || saving) return;
+    setSaving(true);
+    try {
+      await api.addTag(tableId, subject, trimmed);
+      setLabel("");
+      setAdding(false);
+      onTagged();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      {tags.map((t) => (
+        <span
+          key={t.rkey}
+          style={{ fontSize: 11.5, color: "var(--text-3)", background: "var(--surface-2)", borderRadius: 999, padding: "2px 9px" }}
+        >
+          {`#${t.label}`}
+        </span>
+      ))}
+      {adding ? (
+        <span style={{ display: "inline-flex", gap: 4 }}>
+          <input
+            autoFocus
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submit();
+              if (e.key === "Escape") setAdding(false);
+            }}
+            placeholder="tag name"
+            style={{
+              width: 90,
+              background: "var(--bg)",
+              border: "1px solid var(--border)",
+              borderRadius: 999,
+              color: "var(--text)",
+              padding: "2px 9px",
+              fontSize: 11.5,
+            }}
+          />
+        </span>
+      ) : (
+        <button
+          onClick={() => setAdding(true)}
+          style={{ background: "none", border: "none", color: "var(--text-3)", fontSize: 11.5, padding: "2px 4px" }}
+        >
+          + Tag
+        </button>
+      )}
+    </div>
   );
 }
 

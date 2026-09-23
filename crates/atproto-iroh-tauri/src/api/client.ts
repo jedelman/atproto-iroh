@@ -90,6 +90,10 @@ export interface Client {
   pins(namespaceId: string): Promise<TagView[]>;
   tagsFor(namespaceId: string, subject: string): Promise<TagView[]>;
   addTag(namespaceId: string, subject: string, label: string): Promise<string>;
+  /** Every tag in the namespace, across every subject — the "browse by
+   * tag" hook `tagsFor` can't answer, since it only knows one subject
+   * at a time. */
+  listAllTags(namespaceId: string): Promise<TagView[]>;
   /** Writes a new, immutable revision — never overwrites a prior one.
    * See `namespace::save_document_revision`'s doc comment for the CRDT
    * data-loss case this replaced. Returns the new revision's rev key. */

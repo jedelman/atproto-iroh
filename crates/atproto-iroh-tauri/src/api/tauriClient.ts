@@ -90,6 +90,7 @@ export const tauriClient: Client = {
     invoke<TagView[]>("tags_for", { namespaceId, subject }),
   addTag: (namespaceId, subject, label) =>
     invoke<string>("add_tag", { namespaceId, subject, label }),
+  listAllTags: (namespaceId) => invoke<TagView[]>("list_all_tags", { namespaceId }),
   docSave: (namespaceId, docId, text) =>
     invoke<string>("doc_save", { namespaceId, docId, text }),
   docLoad: async (namespaceId, docId) => {

@@ -125,6 +125,45 @@ describe("TableDetail", () => {
     expect(screen.getByDisplayValue(/Draft: workday Saturday/)).toBeInTheDocument();
   });
 
+  it("shows an existing tag on a message and filters messages by it", async () => {
+    // Devon's tomato message is tagged "harvest" in fixtures.ts (real
+    // data, not test setup) — the filter chip row only renders real
+    // user labels (never the reserved system:pin one), and clicking it
+    // should narrow the Messages tab to just that message.
+    renderTable(gardenTableId);
+    await waitFor(() => expect(screen.getByText("The Garden Table")).toBeInTheDocument());
+
+    expect((await screen.findAllByText("#harvest")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("#system:pin")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getAllByText("#harvest")[0]); // the filter chip
+    // The tomato message's text also renders in the pinned-messages
+    // section above the tabs, so it's expected to appear twice — the
+    // real property this filter narrows is the Messages tab, which the
+    // Welcome message's absence below actually proves.
+    expect(
+      screen.getAllByText("Tomatoes are going wild this week, come take some before the raccoons do.").length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.queryByText(/Welcome! Water the beds/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("tags a message and sees the new tag chip appear", async () => {
+    renderTable(gardenTableId);
+    await waitFor(() => expect(screen.getByText("The Garden Table")).toBeInTheDocument());
+
+    const welcomeText =
+      "Welcome! Water the beds Tue/Thu evenings, and grab whatever's ripe on your way out — that's what it's here for.";
+    const card = screen.getByText(welcomeText).closest("div")!;
+    await userEvent.click(within(card).getByText("+ Tag"));
+    await userEvent.type(within(card).getByPlaceholderText("tag name"), "welcome{Enter}");
+
+    expect(await within(card).findByText("#welcome")).toBeInTheDocument();
+    // The new label also shows up as a filter chip above the list.
+    expect((await screen.findAllByText("#welcome")).length).toBeGreaterThan(1);
+  });
+
   it("uploads a photo and shows it immediately in the gallery", async () => {
     renderTable(gardenTableId);
     await waitFor(() => expect(screen.getByText("The Garden Table")).toBeInTheDocument());

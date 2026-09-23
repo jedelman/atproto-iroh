@@ -32,7 +32,7 @@ the filter chips below it filter the Feed in place instead; the dashed
 "+ Join" circle at the end of that strip (and the Feed's own empty
 state) opens Join.
 
-Four of the Table detail tabs are new since Composing shipped:
+Five of the Table detail tabs are new since Composing shipped:
 - **Composer** (Messages tab) — optimistic: the sent message appears
   immediately, resolved through the real self author hex via
   `nodeDid()` rather than a placeholder, so it renders through
@@ -98,6 +98,38 @@ Four of the Table detail tabs are new since Composing shipped:
   `revokeObjectURL`) neither of which jsdom implements — real Tauri-
   webview/browser APIs missing only from the test environment, not
   worked around in the app code itself.
+- **Tagging** — a "+ Tag" affordance on every message (Messages tab)
+  showing its existing tags as chips and letting you add a new one, plus
+  a filter-chip row above the list that narrows the tab to messages
+  carrying a clicked label. New Tauri command `list_all_tags`
+  (`tagging::list_all_tags` unwrapped — `tags_for` alone only answers
+  "what tags does *this* subject have," not "what labels exist to
+  browse by"), plus `Client.listAllTags` and a `useTags` hook. Reserved
+  `system:`-prefixed labels (`PIN_LABEL` and anything else this crate
+  later claims — `tagging.rs`'s own top doc comment) are filtered out of
+  both the chip row and the per-message tag list, so pins never show up
+  disguised as a browsable tag. Images and Shared docs aren't wired into
+  this pass — messages only, a real scoped gap, not silently dropped.
+
+  **Found and fixed a real cross-feature bug while building this, not
+  cosmetic**: `mockClient`'s `listMessages`/`listImages`/
+  `listProposals`/`listAllTags`/`docHistory` all originally returned the
+  live, mutable array a later `push()` would go on to mutate *in place*
+  — not a copy. Tagging a message called `refresh()`, which fetched
+  that same array reference (now containing the new tag) and handed it
+  straight to `setState`; React's `Object.is` bailout compared it
+  against the *exact same reference* already sitting in state and
+  silently skipped the re-render, even though the underlying data had
+  genuinely changed. Confirmed live via an isolated repro
+  (`useTags` driving a two-line probe component) before touching the
+  fix, not assumed from reading the code — the repro's own
+  `before`/`after` array aliasing is what gave it away: capturing
+  `before = await api.listAllTags(...)` and asserting against
+  `before.length + 1` failed because the *same array* `before` pointed
+  at had already grown once `addTag` ran. Fixed in `mockClient.ts`:
+  every list-returning method now spreads into a fresh array
+  (`[...(x[id] ?? [])]`) before returning it — `useTags.ts`'s own top
+  comment carries the postmortem for whoever touches this file next.
 
 **Screenshot-verified, not just test-verified** — a real Playwright +
 headless-Chromium pipeline against `npm run dev`'s mock-backed browser
@@ -115,20 +147,22 @@ plain-JS app had working UI for every one of its 28 commands (Messaging
 thread view *outside* a Table's own tab — reply-to isn't wired into the
 Composer yet, the full Governance UI beyond General-class
 decisions — no admit/remove-cosigner or policy-change proposal forms,
-Tagging, Mute, Members/Profile editing, QR generate *and* scan, the raw
-inspector, relay/control). Functionally, this rebuild still covers
-*less* than the app it replaced; a deliberate trade (a real design
-direction on four screens, over a complete-but-undesigned UI on eight)
-that needs the remaining screens built to reach parity.
+Tagging on Images/Shared docs (Messages only, above), Mute, Members/
+Profile editing, QR *generation* (`ticket_to_qr` — scanning is built,
+Join screen above), the raw inspector, relay/control). Functionally, this
+rebuild still covers *less* than the app it replaced; a deliberate
+trade (a real design direction on five screens, over a
+complete-but-undesigned UI on eight) that needs the remaining screens
+built to reach parity.
 
 ## What's real here
 
 - `src-tauri/` is a genuine Tauri 2 app: `atproto-iroh-core` is a normal
   path dependency, no IPC or FFI boundary between UI-adjacent code and
   protocol logic.
-- Twenty-nine commands (28 plus `pins`, added 2026-09-23 alongside
-  `tagging::pins()` in the core crate), each a direct call into the core
-  crate:
+- Thirty commands (28 plus `pins` and `list_all_tags`, both added
+  2026-09-23 alongside their `tagging::` core-crate counterparts), each
+  a direct call into the core crate:
   `spawn_node` (loads or generates a persistent `did:iroh` identity and
   starts a real `iroh` node against real on-disk storage — deliberately
   not done at app launch; see `main.rs`'s comment on why), `node_did`,

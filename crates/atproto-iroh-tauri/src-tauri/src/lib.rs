@@ -775,6 +775,37 @@ async fn tags_for(
         .collect())
 }
 
+/// Every tag currently synced into a namespace, across every subject —
+/// `tagging::list_all_tags` unwrapped for the UI. The Tagging UI's
+/// "browse by tag" needs this rather than `tags_for` (which only
+/// answers "what tags does *this* subject have") — same O(every tag in
+/// the namespace) caveat `list_proposals` already accepts at reference-
+/// app scale.
+#[tauri::command]
+async fn list_all_tags(
+    state: State<'_, AppState>,
+    namespace_id: String,
+) -> Result<Vec<TagView>, String> {
+    let node = state.node.lock().await;
+    let node = node.as_ref().ok_or("call spawn_node first")?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    let tags = tagging::list_all_tags(node, doc)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(tags
+        .into_iter()
+        .map(|(author, rkey, tag)| TagView {
+            author_hex: hex::encode(author.as_bytes()),
+            rkey,
+            subject: tag.subject,
+            label: tag.label,
+        })
+        .collect())
+}
+
 /// Every currently-pinned subject in a namespace, one per author, most
 /// recently pinned first — `tagging::pins` unwrapped for the UI. See
 /// `DESIGN_BRIEF.md`'s Layout Strategy: "anyone can pin, one pin per
@@ -1002,6 +1033,7 @@ pub fn run() {
             list_muted,
             add_tag,
             tags_for,
+            list_all_tags,
             pins,
             list_proposals,
             governance_state,
