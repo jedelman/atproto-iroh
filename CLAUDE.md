@@ -228,9 +228,26 @@ departure from the "plain HTML/JS/CSS, no bundler, no framework" rule
 that held until now — deliberate, chosen during the interview, not a
 regression from it), and a namespace is called a **"Table"** in every
 user-facing surface (`.impeccable.md`'s Vocabulary section has the
-reasoning). Nothing about `atproto-iroh-core` or the Tauri commands
-changes for this — it's a frontend-only rebuild over the existing,
-unchanged backend.
+reasoning).
+
+**Same-day follow-up guidance added three structural decisions**,
+folded into the brief rather than treated as separate: a **unified
+cross-Table feed is the home screen** (Bluesky-shaped, explicitly
+reacting to Discord's per-server-switcher becoming overwhelming past a
+couple of servers — Tables and tags become feed filters, not separate
+destinations); a **pinned, admin-authored welcome message per Table**
+(reuses existing messaging+tagging, no backend change); and **built-in
+profile stickers** as part of first-run onboarding ("even bots need
+cute stickers"), custom upload deliberately deferred.
+
+**Correction to "nothing about `atproto-iroh-core` changes"**: mostly
+still true, but not entirely — profile stickers need one small, real
+addition (`NodeProfile` gaining an avatar/sticker field, confirmed
+absent from the current schema). Said plainly rather than left standing
+wrong; `DESIGN_BRIEF.md`'s intro has the same correction with full
+detail, and its Open Questions section has the real backend/architecture
+questions this raised (who's allowed to pin a message, feed-query
+architecture at scale).
 
 ## Observability: release builds only, telemetry rides the sync primitive
 

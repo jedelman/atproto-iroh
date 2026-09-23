@@ -8,21 +8,34 @@ section — read those first if anything here seems to assume context.
 Handoff target: `/impeccable craft` (or equivalent implementation work)
 against this brief. The current plain HTML/JS/CSS frontend
 (`dist/index.html`/`main.js`/`styles.css`) is being replaced with a real
-React + Vite frontend over the same, unchanged Rust/Tauri backend — no
-core-crate or Tauri-command changes implied by this brief.
+React + Vite frontend over the same Rust/Tauri backend. **Correction
+(2026-09-23, same day, after Jason's follow-up guidance below)**: this
+is *mostly* a frontend-only rebuild, but not entirely — profile
+stickers need one small, real addition to `atproto-iroh-core`
+(`NodeProfile` gaining an avatar/sticker field). Said plainly here
+rather than letting the earlier "no core-crate changes" claim stand
+uncorrected — see §4's Profile Customization note and §9.
 
 ## 1. Feature Summary
 
 A full rebuild of the Tauri reference client from a plain, undesigned
 debug UI into a real product: a private, serverless coordination app for
-small groups — messaging, shared decisions, documents, and photos.
+small groups — messaging, shared decisions, documents, and photos —
+fronted by a unified activity feed across every Table you're in (not a
+Discord-style per-server switcher, which is a named anti-pattern here),
+with real profile personality (stickers, not just a name) and an
+admin-authored pinned welcome per Table.
 
 ## 2. Primary User Action
 
 In the first minute: see who's actually here, and register that this is
 private — not composing a message, not reading a decision. Trust and
-belonging come before any task. Opening a Table should answer "whose
-table is this?" before it asks the user to do anything.
+belonging come before any task. **Revised with the Feed-as-home decision
+(§4)**: this doesn't mean landing on a bare member list anymore — it
+means the Feed's own top-of-screen has to carry "these are your people,
+this is just us" (a Tables/people strip, pinned-welcome excerpts) before
+the activity stream itself, so the feed still answers "whose table is
+this?" even though it's the very first screen, not one tap in.
 
 ## 3. Design Direction
 
@@ -45,12 +58,45 @@ must never leak into everyday flows; must clear the AI-slop test
   naming decision, not open anymore. `namespace_id` etc. stay as the
   literal Rust/Tauri-command parameter names (backend is unchanged);
   this is a frontend vocabulary decision only.
-- **Top level**: a list of Tables the person belongs to — home base, not
-  a namespace-id picker.
-- **Inside a Table**: Members-first landing (the primary action), then
-  Messages, Decisions (governance/polls, relabeled away from raw
-  "Proposal"/"Signal"), Photos, Shared docs — tabs or a persistent side
-  rail, not a dense multi-section scroll like today's `index.html`.
+- **Feed is the home screen — a deliberate reaction to Discord's failure
+  mode.** Jason's framing, direct from the guidance session: Discord's
+  per-server switcher becomes overwhelming the moment someone's in more
+  than a couple of servers; the fix (per Bluesky's model) is one unified
+  timeline across everything you're in, with Table and tag as *filters*
+  on that timeline, not separate destinations you have to remember to
+  check. Concretely: opening the app lands on a merged feed of Messages,
+  Photos, Decisions, and Shared-doc updates across every Table, newest
+  first, filterable by Table and by tag. A visually distinct feed-item
+  treatment per content type matters here (a message doesn't look like a
+  photo doesn't look like a Decision) so the merge reads as "one
+  coherent stream," not "four features awkwardly interleaved."
+- **A Tables list still exists**, one level in from the feed (e.g. a
+  rail or a picker), for when someone wants a specific Table's full
+  context rather than the cross-cutting view — not removed, just no
+  longer the front door.
+- **Inside a Table**: Members-first landing (the original primary
+  action, still true when someone deliberately opens a specific Table),
+  led by that Table's **pinned welcome message** if one exists (see
+  below), then Messages, Decisions, Photos, Shared docs — tabs or a
+  persistent side rail, not a dense multi-section scroll like today's
+  `index.html`.
+- **Pinned welcome post, per Table.** An admin-authored message (reuses
+  the existing `messaging` + `tagging` primitives — tag a message
+  `"pinned"`, no backend changes needed for this one) shown at the top
+  whenever anyone opens that Table, and excerpted in the Feed the first
+  time a person sees a new Table's activity. This is the concrete
+  answer to "whose table is this, and what's it for" — the single
+  highest-leverage piece of content in the whole app for making a new
+  Table feel like somewhere specific rather than an empty namespace.
+- **Profile customization: built-in stickers now, custom upload later.**
+  Every member gets a sticker/avatar, not just a name — confirmed
+  explicitly: "even bots need cute stickers." A curated, on-brand
+  sticker set ships with the app (art/asset work, not a backend
+  concern) and picking one is part of first-run onboarding, not buried
+  in settings. Custom image upload (reusing the already-proven
+  `images.rs` infrastructure) is flagged for a later pass, not this one
+  — see §9 for the moderation/federation question that makes it a
+  separate decision, not just more work.
 - **Protocol/advanced stuff** (raw inspector, relay/control, mute
   internals, `did:iroh` display) behind a clearly-secondary
   "Advanced"/settings surface — present for the curious, never in the
@@ -61,9 +107,15 @@ must never leak into everyday flows; must clear the AI-slop test
 ## 5. Key States
 
 - First launch, no identity yet (today: a bare "Spawn node" button —
-  needs a real welcome moment).
+  needs a real welcome moment) — **now includes picking a sticker** as
+  part of that first-run flow, not an optional settings detour.
 - No Tables yet — empty state should teach ("scan a code to join, or
-  start your own table"), not just say "nothing here."
+  start your own table"), not just say "nothing here." The Feed itself,
+  with zero Tables, is a distinct empty state from "a Table with no
+  recent activity."
+- A brand-new Table with a pinned welcome vs. one without — the
+  no-welcome case shouldn't feel broken or half-finished; a real
+  encouragement-to-write-one prompt for whoever founded it.
 - A Table with 2 people vs. a few dozen (realistic range: small-group,
   not enterprise scale).
 - Mid-sync ("full history sync can take a moment" is currently a raw
@@ -82,13 +134,19 @@ must never leak into everyday flows; must clear the AI-slop test
 ## 6. Interaction Model
 
 Join is the hero flow: scan → see the Table's people appear → land on
-Members. Sending a message, reacting, tagging, and responding to a
-Decision should all feel immediate — optimistic UI, since the backend
-already syncs asynchronously and the UI shouldn't visibly wait on
-network round-trips for local actions. Decisions need an interaction
-model that makes "I don't need to act, my silence is fine" a legible,
-comfortable choice — not every screen pushing toward an explicit
-response.
+the Feed with that Table's pinned welcome surfaced. Sending a message,
+reacting, tagging, and responding to a Decision should all feel
+immediate — optimistic UI, since the backend already syncs
+asynchronously and the UI shouldn't visibly wait on network round-trips
+for local actions. Decisions need an interaction model that makes "I
+don't need to act, my silence is fine" a legible, comfortable choice —
+not every screen pushing toward an explicit response. **Feed filtering**
+(by Table, by tag) needs to feel as fast as a client-side toggle even
+though it's filtering already-synced local data, not a new fetch —
+there's no reason this should ever feel like a loading state.
+**Choosing a sticker** during onboarding should feel like the fun part,
+not a form field — a real moment to invest motion/delight in, not a
+dropdown.
 
 ## 7. Content Requirements
 
@@ -96,21 +154,55 @@ Real UX-writing pass needed throughout — current copy is
 developer-facing (`"call spawn_node first"`, raw error strings,
 "Proposal"/"Signal"/"Ratified"/"Blocked"). Warm, plain-language
 equivalents everywhere a non-technical person will read them;
-protocol-accurate terms survive only in the Advanced surface.
+protocol-accurate terms survive only in the Advanced surface. **New**:
+the built-in sticker set itself is a content deliverable (needs curating
+— a cohesive, warm, on-brand set, not clip art), and pinned-welcome
+copy needs a real prompt/placeholder for whoever's writing one ("what
+should people know about this table?") so it doesn't read as a blank
+intimidating text box.
 
 ## 8. Recommended References
 
-`spatial-design.md` (multi-section app, needs real IA),
-`interaction-design.md` (join/propose/signal are all forms that matter),
-`motion-design.md` (the join flow and Decision-status changes are the
-two moments worth real motion investment), `ux-writing.md` (heaviest
-lift — almost everything user-facing needs rewriting).
+`spatial-design.md` (multi-section app, needs real IA — now also a
+merged-feed layout problem, distinguishing four content types in one
+stream), `interaction-design.md` (join/propose/signal are all forms
+that matter), `motion-design.md` (the join flow, sticker-picking, and
+Decision-status changes are the moments worth real motion investment),
+`ux-writing.md` (heaviest lift — almost everything user-facing needs
+rewriting, now including the sticker set's own personality).
 
 ## 9. Open Questions
 
+- **Who can pin a message?** `tagging.rs` is deliberately open/
+  append-only (anyone can tag anything) — "admin-authored pinned
+  message" implies some notion of who's allowed to set the pin, which
+  doesn't exist yet as a concept. Options: restrict "pinned" to
+  governance-eligible members (reuses the existing eligibility
+  machinery, no new primitive), or leave it fully open and let the UI
+  just show the most recent one someone tagged pinned (simpler,
+  possibly too open). Needs a decision before backend work starts.
+- **The sticker/avatar field is a real, small `atproto-iroh-core`
+  change** (`NodeProfile` gaining something like `avatar: Option<
+  String>`, an id into the client's built-in set, not a blob — current
+  schema confirmed to have no such field). Small and backward-compatible
+  (`skip_serializing_if`, same pattern every other optional `NodeProfile`
+  field already uses), but real — flagging so it isn't discovered
+  mid-implementation as a surprise.
+- **Feed performance/architecture**: today's Tauri commands
+  (`list_messages`, `list_images`, `list_proposals`,
+  `list_document_revisions`) are all per-Table. A merged feed needs
+  either N client-side calls merged in JS (simplest, fine at small
+  scale) or a new aggregating Tauri command (better at real scale) —
+  worth deciding once real usage patterns exist rather than
+  over-building now; simplest option first is consistent with this
+  repo's whole build history.
+- Custom-avatar-upload's federation/moderation question, deferred
+  deliberately (§4): once images can represent *people* rather than
+  just shared content, "who can see/serve someone's avatar across
+  Tables" becomes a real design question this brief isn't resolving.
 - Scope of what ships in v1 of the *implementation* (design covers the
-  whole app; build could still stage — e.g. Messages/Members/Decisions/
-  Photos first, Documents/Tagging/Advanced following).
+  whole app; build could still stage — e.g. Feed/Messages/Decisions
+  first, Documents/Tagging/Advanced following).
 - Real device testing is still zero for this whole app — worth
   sequencing a design review against an actual phone before going deep
   on polish, same caveat as the rest of this session's Android work.
