@@ -2,12 +2,12 @@
 // implemented once for real (tauriClient.ts, thin invoke() wrappers)
 // and once against the canonical mock dataset (mockClient.ts, for
 // `npm run dev` in a plain browser and for tests). Deliberately a
-// subset of the 29 real Tauri commands (28 in CLAUDE.md's count plus
-// `pins`, added this session) — this is the "Feed/Messages/Decisions
-// first" slice DESIGN_BRIEF.md's Open Questions flagged, not full
-// parity with every command yet (mute, doc-save/load/history, image
-// upload/download, share/join/ticket_to_qr aren't wired into this
-// layer in this pass).
+// subset of the 30 real Tauri commands (28 in CLAUDE.md's count plus
+// `pins`/`list_all_tags`, added this session) — this is the
+// "Feed/Messages/Decisions first" slice DESIGN_BRIEF.md's Open
+// Questions flagged, not full parity with every command yet
+// (share/join/ticket_to_qr generation, the raw inspector, and
+// relay/control aren't wired into this layer).
 
 import type {
   DocRevision,
@@ -106,4 +106,10 @@ export interface Client {
    * else edited this while you were offline" instead of silently
    * picking a side. */
   docHistory(namespaceId: string, docId: string): Promise<DocRevision[]>;
+  /** Mutes an author's content in this reader's own client — local
+   * only, no sync, not scoped to any one Table (`mute::MuteList`'s doc
+   * comment). */
+  muteAuthor(authorHex: string): Promise<void>;
+  unmuteAuthor(authorHex: string): Promise<void>;
+  listMuted(): Promise<string[]>;
 }

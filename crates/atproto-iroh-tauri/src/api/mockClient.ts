@@ -52,6 +52,9 @@ const images: Record<string, typeof IMAGES[string]> = structuredClone(IMAGES);
 // loadImageBytes honestly returns null for it, same as a real node that
 // hasn't synced those bytes yet.
 const imageBytes = new Map<string, number[]>();
+// Not per-Table — mute::MuteList's doc comment: "local only, no sync,
+// no lexicon," a reader's own client-side filter, same in the mock.
+const mutedAuthors = new Set<string>();
 
 function imageBytesKey(namespaceId: string, authorHex: string, rkey: string) {
   return `${namespaceId}/${authorHex}/${rkey}`;
@@ -249,5 +252,17 @@ export const mockClient: Client = {
 
   async docHistory(namespaceId, docId) {
     return [...(docs[namespaceId]?.[docId] ?? [])];
+  },
+
+  async muteAuthor(authorHex) {
+    mutedAuthors.add(authorHex);
+  },
+
+  async unmuteAuthor(authorHex) {
+    mutedAuthors.delete(authorHex);
+  },
+
+  async listMuted() {
+    return [...mutedAuthors];
   },
 };

@@ -3,6 +3,8 @@ import { Onboarding } from "./screens/Onboarding";
 import { Feed } from "./screens/Feed";
 import { TableDetail } from "./screens/TableDetail";
 import { Join } from "./screens/Join";
+import { ProfileEdit } from "./screens/ProfileEdit";
+import { Mute } from "./screens/Mute";
 import { useProfileDraft } from "./hooks/useProfileDraft";
 
 // HashRouter, not BrowserRouter: Tauri serves the frontend from a
@@ -19,7 +21,9 @@ export function App() {
           <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/feed" element={<Feed />} />
           <Route path="/table/:id" element={<TableDetail />} />
+          <Route path="/table/:id/profile" element={<ProfileEdit />} />
           <Route path="/join" element={<Join />} />
+          <Route path="/mute" element={<Mute />} />
         </Routes>
       </div>
     </HashRouter>

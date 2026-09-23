@@ -107,4 +107,7 @@ export const tauriClient: Client = {
     });
     return revisions.map(tupleToRevision);
   },
+  muteAuthor: (authorHex) => invoke("mute_author", { authorHex }),
+  unmuteAuthor: (authorHex) => invoke("unmute_author", { authorHex }),
+  listMuted: () => invoke<string[]>("list_muted"),
 };

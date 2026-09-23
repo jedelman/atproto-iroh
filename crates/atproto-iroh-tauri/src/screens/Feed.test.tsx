@@ -5,8 +5,10 @@
 
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { Feed } from "./Feed";
+import { api } from "../api";
+import { AUTHORS } from "../mocks/fixtures";
 
 // Feed links each Table's avatar to /table/:id (react-router's <Link>),
 // which throws outside a Router context — MemoryRouter is the
@@ -20,6 +22,24 @@ function renderFeed() {
 }
 
 describe("Feed", () => {
+  afterEach(async () => {
+    // mockClient's mute list is module-level state — undo this test's
+    // own mute so it can't leak into a later one in this file.
+    for (const hex of await api.listMuted()) await api.unmuteAuthor(hex);
+  });
+
+  it("hides a muted author's feed items", async () => {
+    await api.muteAuthor(AUTHORS.sequoia);
+    renderFeed();
+    await waitFor(() => expect(screen.getAllByText("The Garden Table").length).toBeGreaterThan(0));
+
+    // Sequoia's hiking message is the only Weekend Hikers feed item in
+    // fixtures.ts — muting her should empty that Table's feed entirely.
+    expect(screen.queryByText(/Made it to the overlook/)).not.toBeInTheDocument();
+    // An unmuted author's content is unaffected.
+    expect(screen.getByText("Move tool-shed hours to weekends")).toBeInTheDocument();
+  });
+
   it("renders every table, the pinned excerpt, and a decision's status", async () => {
     renderFeed();
 

@@ -30,7 +30,28 @@ running inside Tauri and falls back to an in-memory mock backend
 Tapping a Table's sticker in the Feed navigates to its detail screen;
 the filter chips below it filter the Feed in place instead; the dashed
 "+ Join" circle at the end of that strip (and the Feed's own empty
-state) opens Join.
+state) opens Join. Two more screens: **Profile edit**
+(`/table/:id/profile`, reached from "Edit your profile" in Table
+detail's Members section) — a NodeProfile is per-Table (SPEC.md §3.4's
+`RecordIdentifier` is `(namespace, author, key)`, and `NodeProfile::
+SELF_KEY` is a fixed per-author slot *within one namespace's doc*), so
+there's no single "your profile" to edit, only "your profile in this
+Table"; prefills from the real synced profile via `listProfiles` +
+`nodeDid()`, same sticker picker as Onboarding, and calls the
+already-existing `updateProfile` (wired into `Client` early this
+session but never reached from any screen until now). **Mute**
+(`/mute`, reached from the Feed header's own avatar) — global, not
+per-Table (`mute::MuteList`'s own doc comment: local-only, no sync, no
+lexicon), a plain hex-id mute/unmute list against the three new
+`Client` methods (`muteAuthor`/`unmuteAuthor`/`listMuted`). A real
+`useMutedAuthors` hook (polls `listMuted()` on mount) filters muted
+authors' content out of both the Feed (messages/photos/decisions
+together, via a small `itemAuthorHex` switch over `FeedItem`'s three
+variants) and Table detail's Messages and Photos tabs. Doesn't yet
+reach the pinned-messages section above the tabs, or Decisions —
+a real, named gap, not silently dropped. Not just plumbed and left
+untested: `Feed.test.tsx` and `TableDetail.test.tsx` each got a real
+mute-then-assert-gone test, not just a "the command exists" check.
 
 Five of the Table detail tabs are new since Composing shipped:
 - **Composer** (Messages tab) — optimistic: the sent message appears
@@ -147,13 +168,12 @@ plain-JS app had working UI for every one of its 28 commands (Messaging
 thread view *outside* a Table's own tab — reply-to isn't wired into the
 Composer yet, the full Governance UI beyond General-class
 decisions — no admit/remove-cosigner or policy-change proposal forms,
-Tagging on Images/Shared docs (Messages only, above), Mute, Members/
-Profile editing, QR *generation* (`ticket_to_qr` — scanning is built,
-Join screen above), the raw inspector, relay/control). Functionally, this
-rebuild still covers *less* than the app it replaced; a deliberate
-trade (a real design direction on five screens, over a
-complete-but-undesigned UI on eight) that needs the remaining screens
-built to reach parity.
+Tagging on Images/Shared docs (Messages only, above), QR *generation*
+(`ticket_to_qr` — scanning is built, Join screen above), the raw
+inspector, relay/control). Functionally, this rebuild still covers
+*less* than the app it replaced; a deliberate trade (a real design
+direction on seven screens, over a complete-but-undesigned UI on
+eight) that needs the remaining screens built to reach parity.
 
 ## What's real here
 
@@ -431,10 +451,10 @@ a real client would need them:
   — the paste-ticket path is fully tested instead
   (`Join.test.tsx`: valid ticket → lands on the new table, invalid
   ticket → real error, not a silent failure).
-- **Every screen except Feed, Onboarding, Table detail, and Join** —
-  see "Frontend rebuild," above, for the full list and why this is a
-  deliberate, temporary step backward in feature coverage, not an
-  oversight.
+- **Every screen except Feed, Onboarding, Table detail, Join, Profile
+  edit, and Mute** — see "Frontend rebuild," above, for the full list
+  and why this is a deliberate, temporary step backward in feature
+  coverage, not an oversight.
 - **Any error/loading state beyond a basic "Settling in…"/empty-state
   message.** Better than the old app's raw `textContent = "error:
   ..."` but still not a real design pass on error states.

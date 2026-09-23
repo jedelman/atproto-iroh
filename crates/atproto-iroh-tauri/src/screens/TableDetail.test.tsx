@@ -5,9 +5,10 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { TableDetail } from "./TableDetail";
-import { TABLES } from "../mocks/fixtures";
+import { AUTHORS, TABLES } from "../mocks/fixtures";
+import { api } from "../api";
 
 const gardenTableId = TABLES[0].id;
 
@@ -77,6 +78,29 @@ describe("TableDetail", () => {
     await userEvent.click(screen.getByText("Decisions"));
     expect(screen.getByText("Move tool-shed hours to weekends")).toBeInTheDocument();
     expect(screen.getByText("Open")).toBeInTheDocument();
+  });
+
+  afterEach(async () => {
+    // mockClient's mute list is module-level state, not reset between
+    // tests — undo this test's own mute so it can't leak into a later
+    // one in this file.
+    for (const hex of await api.listMuted()) await api.unmuteAuthor(hex);
+  });
+
+  it("hides a muted author's messages from the Messages tab", async () => {
+    await api.muteAuthor(AUTHORS.devon);
+    renderTable(gardenTableId);
+    await waitFor(() => expect(screen.getByText("The Garden Table")).toBeInTheDocument());
+
+    // Devon's tomato message should be gone from the Messages tab —
+    // still allowed to appear once, in the Pinned-messages section
+    // above the tabs, which doesn't filter by mute (a real, separate
+    // gap the README notes, not this test's concern).
+    expect(
+      screen.queryAllByText("Tomatoes are going wild this week, come take some before the raccoons do."),
+    ).toHaveLength(1);
+    // Marisol's welcome message, from a non-muted author, still shows.
+    expect(screen.getByText(/Welcome! Water the beds/)).toBeInTheDocument();
   });
 
   it("proposes a new decision, then objects to it and sees the status flip", async () => {

@@ -8,7 +8,19 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Sticker } from "../components/Sticker";
 import { useFeed, type FeedItem } from "../hooks/useFeed";
+import { useMutedAuthors } from "../hooks/useMutedAuthors";
 import { parseRecordRef } from "../lib/recordRef";
+
+function itemAuthorHex(item: FeedItem): string {
+  switch (item.kind) {
+    case "message":
+      return item.message.author_hex;
+    case "photo":
+      return item.image.author_hex;
+    case "decision":
+      return item.proposal.author_hex;
+  }
+}
 
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -29,11 +41,13 @@ type FeedFilter = { kind: "all" } | { kind: "table"; id: string };
 export function Feed() {
   const { loading, tables, items, pinsByTable, profilesByAuthor } = useFeed();
   const [filter, setFilter] = useState<FeedFilter>({ kind: "all" });
+  const mutedAuthors = useMutedAuthors();
 
   const visibleItems = useMemo(() => {
-    if (filter.kind === "all") return items;
-    return items.filter((i) => i.tableId === filter.id);
-  }, [items, filter]);
+    const unmuted = items.filter((i) => !mutedAuthors.has(itemAuthorHex(i)));
+    if (filter.kind === "all") return unmuted;
+    return unmuted.filter((i) => i.tableId === filter.id);
+  }, [items, filter, mutedAuthors]);
 
   // One pinned excerpt to feature — the most recently pinned message
   // across every Table, matching "excerpted in the Feed the first time
@@ -68,7 +82,9 @@ export function Feed() {
         }}
       >
         <div style={{ fontFamily: "var(--font-display)", fontSize: 19 }}>atproto-iroh</div>
-        <Sticker id={profilesByAuthor[Object.keys(profilesByAuthor)[0]]?.avatar} size={34} />
+        <Link to="/mute" aria-label="Muted authors">
+          <Sticker id={profilesByAuthor[Object.keys(profilesByAuthor)[0]]?.avatar} size={34} />
+        </Link>
       </div>
 
       {/* "These are your people" strip */}

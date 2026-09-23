@@ -10,6 +10,7 @@ import { Sticker } from "../components/Sticker";
 import { profileFor, useTable } from "../hooks/useTable";
 import { TABLE_DOC_ID, useTableDoc } from "../hooks/useTableDoc";
 import { useTags } from "../hooks/useTags";
+import { useMutedAuthors } from "../hooks/useMutedAuthors";
 import { hasPossibleConflict } from "../lib/docConflict";
 import { api, type ImageView, type MessageView, type ProfileView, type ProposalView, type TagView } from "../api";
 
@@ -35,16 +36,24 @@ export function TableDetail() {
   }, [allMessages]);
 
   const [uploadedImages, setUploadedImages] = useState<ImageView[]>([]);
-  const allImages = useMemo(() => [...uploadedImages, ...images], [uploadedImages, images]);
+  const mutedAuthors = useMutedAuthors();
+  const allImages = useMemo(
+    () => [...uploadedImages, ...images].filter((img) => !mutedAuthors.has(img.author_hex)),
+    [uploadedImages, images, mutedAuthors],
+  );
 
   const { userLabels, tagsBySubject, refresh: refreshTags } = useTags(id ?? "");
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
   const visibleMessages = useMemo(
     () =>
-      activeTagFilter === null
-        ? allMessages
-        : allMessages.filter((m) => (tagsBySubject.get(m.subject) ?? []).some((t) => t.label === activeTagFilter)),
-    [allMessages, tagsBySubject, activeTagFilter],
+      allMessages
+        .filter((m) => !mutedAuthors.has(m.author_hex))
+        .filter((m) =>
+          activeTagFilter === null
+            ? true
+            : (tagsBySubject.get(m.subject) ?? []).some((t) => t.label === activeTagFilter),
+        ),
+    [allMessages, tagsBySubject, activeTagFilter, mutedAuthors],
   );
 
   if (loading) {
@@ -82,9 +91,14 @@ export function TableDetail() {
 
       {/* Members-first landing — the primary action */}
       <div style={{ padding: "0 var(--space-xl) var(--space-lg)" }}>
-        <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: 0.4 }}>
-          Who's here — just us
-        </p>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+          <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+            Who's here — just us
+          </p>
+          <Link to={`/table/${id}/profile`} style={{ color: "var(--accent)", fontSize: 12.5, fontWeight: 600 }}>
+            Edit your profile
+          </Link>
+        </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
           {members.map((m) => (
             <div key={m.author_hex} style={{ display: "flex", alignItems: "center", gap: 8 }}>
