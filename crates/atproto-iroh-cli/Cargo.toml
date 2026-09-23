@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 atproto-iroh-core = { path = "../atproto-iroh-core" }
+chrono = "0.4"
 iroh = "1.2.0"
 iroh-docs = "0.101.0"
 clap = { version = "4", features = ["derive"] }

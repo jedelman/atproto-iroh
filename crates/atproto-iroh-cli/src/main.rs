@@ -46,7 +46,9 @@
 use anyhow::{Context, Result};
 use atproto_iroh_core::{
     fold,
-    governance::{FoundingPolicy, PolicyValue},
+    governance::{
+        FoundingPolicy, GovernanceClass, PolicyValue, Proposal, Ratification, Signal, SignalType,
+    },
     images, messaging,
     mute::MuteList,
     namespace::{
@@ -260,12 +262,97 @@ enum Command {
         rkey: String,
         out_path: std::path::PathBuf,
     },
+    /// Posts a new governance Proposal (objection-window model, SPEC.md
+    /// §3.7.2/§3.9 — "not a majority vote": ratifies by default unless
+    /// enough eligible members `signal` a Block before `deadline-hours`
+    /// passes). `--subject-member-hex` is required for
+    /// admit-co-signer/remove-co-signer, ignored otherwise.
+    /// `policy-change` isn't exposed here yet — same CLI-simplicity gap
+    /// `create-namespace`'s hardcoded founding policy already has (see
+    /// README's "Not built"); build a `Founding`/`changePolicy` record
+    /// by hand for now if you need one.
+    Propose {
+        namespace_id: String,
+        title: String,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long, value_enum, default_value = "general")]
+        class: GovClass,
+        #[arg(long, default_value_t = 24)]
+        deadline_hours: i64,
+        #[arg(long)]
+        subject_member_hex: Option<String>,
+    },
+    /// Responds to a Proposal — `proposal-author-hex`/`proposal-rkey` as
+    /// printed by `proposals` below (its own ref column).
+    Signal {
+        namespace_id: String,
+        proposal_author_hex: String,
+        proposal_rkey: String,
+        #[arg(long, value_enum)]
+        signal_type: SigType,
+        #[arg(long)]
+        text: Option<String>,
+    },
+    /// Every Proposal in a namespace with its live ratification status —
+    /// re-derived from the full governance history on every call, same
+    /// as the Tauri shell's `list_proposals`, not cached.
+    Proposals { namespace_id: String },
+    /// Current governance state: who's eligible (per the namespace's
+    /// synced Founding claim(s) plus every ratified admit/remove since)
+    /// and the live policy per class.
+    GovernanceState { namespace_id: String },
 }
 
 #[derive(Clone, clap::ValueEnum)]
 enum Mode {
     Read,
     Write,
+}
+
+/// clap needs its own `ValueEnum`, which `atproto_iroh_core::governance`
+/// deliberately doesn't derive (that crate has no UI dependency of any
+/// kind — CLAUDE.md's "Language and structure" section — and clap is a
+/// CLI-only concern). Same reason `Mode` above is a CLI-local mirror of
+/// `iroh_docs::api::protocol::ShareMode` rather than the real type.
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum GovClass {
+    AdmitCoSigner,
+    RemoveCoSigner,
+    ChangePolicy,
+    General,
+}
+
+impl From<GovClass> for GovernanceClass {
+    fn from(class: GovClass) -> Self {
+        match class {
+            GovClass::AdmitCoSigner => GovernanceClass::AdmitCoSigner,
+            GovClass::RemoveCoSigner => GovernanceClass::RemoveCoSigner,
+            GovClass::ChangePolicy => GovernanceClass::ChangePolicy,
+            GovClass::General => GovernanceClass::General,
+        }
+    }
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum SigType {
+    Consent,
+    StandAside,
+    Block,
+    Abstain,
+    Exit,
+}
+
+impl From<SigType> for SignalType {
+    fn from(sig: SigType) -> Self {
+        match sig {
+            SigType::Consent => SignalType::Consent,
+            SigType::StandAside => SignalType::StandAside,
+            SigType::Block => SignalType::Block,
+            SigType::Abstain => SignalType::Abstain,
+            SigType::Exit => SignalType::Exit,
+        }
+    }
 }
 
 #[tokio::main]
@@ -569,6 +656,89 @@ async fn run(
                     println!("wrote {} bytes to {}", bytes.len(), out_path.display());
                 }
                 None => eprintln!("(image bytes not found — not synced yet, or wrong ref)"),
+            }
+        }
+        Command::Propose {
+            namespace_id,
+            title,
+            description,
+            class,
+            deadline_hours,
+            subject_member_hex,
+        } => {
+            let author = author(node).await?;
+            let doc = open(node, namespace_id).await?;
+            let now = chrono::Utc::now();
+            let proposal = Proposal {
+                title: title.clone(),
+                description: description.clone(),
+                class: (*class).into(),
+                block_threshold: None,
+                deadline: now + chrono::Duration::hours(*deadline_hours),
+                policy_change: None,
+                subject_member: subject_member_hex.clone(),
+                created_at: now,
+            };
+            let rkey = fold::propose(&doc, author, &proposal).await?;
+            println!("{}/{rkey}", hex::encode(author.as_bytes()));
+        }
+        Command::Signal {
+            namespace_id,
+            proposal_author_hex,
+            proposal_rkey,
+            signal_type,
+            text,
+        } => {
+            let author = author(node).await?;
+            let doc = open(node, namespace_id).await?;
+            let proposal_author =
+                decode_author_hex(proposal_author_hex).context("invalid proposal author id")?;
+            let sig = Signal {
+                subject: String::new(), // overwritten by fold::signal
+                signal_type: (*signal_type).into(),
+                text: text.clone(),
+                created_at: chrono::Utc::now(),
+            };
+            let rkey = fold::signal(&doc, author, proposal_author, proposal_rkey, sig).await?;
+            println!("{}/{rkey}", hex::encode(author.as_bytes()));
+        }
+        Command::Proposals { namespace_id } => {
+            let doc = open(node, namespace_id).await?;
+            let (_, outcomes) = fold::fold_namespace(node, &doc, chrono::Utc::now()).await?;
+            for o in outcomes {
+                let hex_all = |blockers: Vec<iroh_docs::AuthorId>| {
+                    blockers
+                        .iter()
+                        .map(|a| hex::encode(a.as_bytes()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                let status = match o.ratification {
+                    Ratification::Open { blockers } => format!("open (blockers: {})", hex_all(blockers)),
+                    Ratification::Ratified => "ratified".to_string(),
+                    Ratification::Blocked { blockers } => format!("blocked (by: {})", hex_all(blockers)),
+                };
+                println!(
+                    "{}/{}  [{status}]  {}",
+                    hex::encode(o.author.as_bytes()),
+                    o.rkey,
+                    o.proposal.title
+                );
+            }
+        }
+        Command::GovernanceState { namespace_id } => {
+            let doc = open(node, namespace_id).await?;
+            let (state, _) = fold::fold_namespace(node, &doc, chrono::Utc::now()).await?;
+            println!("eligible:");
+            for a in &state.eligible {
+                println!("  {}", hex::encode(a.as_bytes()));
+            }
+            println!("policy:");
+            for (class, value) in &state.policy {
+                println!(
+                    "  {class:?}: window={}s block_threshold={}",
+                    value.window_seconds, value.block_threshold
+                );
             }
         }
         Command::Serve { .. } => {

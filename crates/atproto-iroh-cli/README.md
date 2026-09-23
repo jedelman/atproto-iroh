@@ -180,6 +180,54 @@ network-separated boxes with genuine internet access.
   writes one image's bytes to a local file. Verified as a real
   byte-for-byte round trip (upload a file, download it back, `diff`
   clean), not just "the types line up."
+- `propose <namespace-id> <title> [--description <text>] [--class
+  general|admit-co-signer|remove-co-signer|change-policy]
+  [--deadline-hours <n>, default 24] [--subject-member-hex <hex>]` —
+  posts a governance Proposal (`fold::propose`). `--subject-member-hex`
+  is required for `admit-co-signer`/`remove-co-signer`, ignored
+  otherwise. `--class change-policy`'s actual policy change isn't
+  exposed as a flag yet (see "Not built").
+- `signal <namespace-id> <proposal-author-hex> <proposal-rkey> --signal-type
+  consent|stand-aside|block|abstain|exit [--text <text>]` — responds to
+  a Proposal (`fold::signal`); the two positional hex/rkey args are
+  `proposals`' own ref column below.
+- `proposals <namespace-id>` — every Proposal with its live ratification
+  status (open/ratified/blocked, with current blockers), re-derived from
+  the full governance history on every call — same as the Tauri shell's
+  `list_proposals`, not cached.
+- `governance-state <namespace-id>` — current eligible set and per-class
+  policy, folded from the namespace's synced `Founding` claim(s) plus
+  every ratified admit/remove since.
+
+## Governance
+
+CLI parity with the Tauri shell's Governance section, added
+2026-09-23 — the CLI's biggest gap until now (this README used to list
+it under "Not built"). Same objection-window model everywhere in this
+repo (SPEC.md §3.7.2/§3.9): a Proposal ratifies by default once its
+deadline passes, unless enough governance-eligible members `signal`
+Block first — **not a majority vote**, silence counts as support.
+`GovernanceClass`/`SignalType` aren't re-exported as `clap::ValueEnum`
+from `atproto-iroh-core` on purpose (that crate has no UI dependency of
+any kind, clap included — CLAUDE.md's "Language and structure"); this
+crate mirrors them locally (`GovClass`/`SigType` in `main.rs`) the same
+way `Mode` already mirrors `iroh_docs::api::protocol::ShareMode`.
+
+Verified live in this sandbox, not just wired: `create-namespace` (which
+already posts a real Founding claim), `governance-state` (confirms the
+founder is eligible with the right default policy), `propose` with a
+0-hour deadline (ratifies immediately, no blockers — confirmed via
+`proposals`), and `propose` with a 1-hour deadline followed by `signal
+--signal-type block` (confirms the blocker shows up in `proposals`'
+live status while the window is still open) — a real multi-step
+governance flow through the actual CLI binary, not asserted from the
+code alone.
+
+Not built: `--policy-change` isn't exposed on `propose` (same
+CLI-simplicity gap `create-namespace`'s hardcoded founding policy
+already has — build a raw `changePolicy` `Proposal` by hand if you need
+one for now), and there's no `--json` output for `proposals`/
+`governance-state` (plain text only, same as every other command here).
 
 ## Identity and storage
 
@@ -210,9 +258,7 @@ QUIC sync, not assumed from the single-process command tests alone.
 - **No output format beyond human-readable text and `dump`'s JSON.** No
   `--json` flag on the other commands, no scripting-friendly exit-code
   conventions beyond "non-zero on error via `anyhow`."
-- **No governance commands yet** (`propose`/`signal`/`governance-state`)
-  — `fold.rs`'s API exists and is tested, just not wired into this crate.
-  Would follow the same shape as the `doc-*` commands.
+- ~~No governance commands.~~ **Built (2026-09-23)** — see "Governance," below.
 - **No profile commands.** `mute`/`tag`/messaging all have CLI parity
   with the Tauri shell now; `update_profile`/`list_profiles` don't —
   this CLI's `create-namespace` still doesn't publish a `NodeProfile` at
