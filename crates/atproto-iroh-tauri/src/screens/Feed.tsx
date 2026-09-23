@@ -95,7 +95,20 @@ export function Feed() {
                 }}
               >
                 <Sticker id={tableAvatar(table.id)} size={52} ring={filter.kind === "table" && filter.id === table.id} />
-                <span style={{ fontSize: 11, color: "var(--text-2)", fontWeight: 500, maxWidth: 64, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span
+                  style={{
+                    fontSize: 10.5,
+                    color: "var(--text-2)",
+                    fontWeight: 500,
+                    width: 66,
+                    lineHeight: 1.25,
+                    textAlign: "center",
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  }}
+                >
                   {table.name}
                 </span>
               </button>

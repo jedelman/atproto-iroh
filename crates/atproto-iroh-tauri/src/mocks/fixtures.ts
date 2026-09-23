@@ -186,7 +186,12 @@ export const TAGS: Record<string, TagView[]> = {
     {
       author_hex: AUTHORS.marisol,
       rkey: "tag-0002",
-      subject: `${AUTHORS.marisol}/network.essmesh.chat.message/0002`,
+      // Marisol's second, later pin — points at Devon's real message
+      // (she only ever authored the one message herself, rkey 0001;
+      // this was a dangling reference to a nonexistent
+      // marisol/…/0002 before, found by actually looking at the
+      // rendered screenshot, not just reading the code).
+      subject: `${AUTHORS.devon}/network.essmesh.chat.message/0002`,
       label: PIN_LABEL,
     },
     {

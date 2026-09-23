@@ -21,8 +21,17 @@ describe("Feed", () => {
 
     // The featured pin is Marisol's *second* pinned message (the tomato
     // one), matching pins.test.ts's "the later pin wins" assertion.
-    expect(screen.getByText(/Pinned in The Garden Table/)).toBeInTheDocument();
-    expect(screen.getByText(/Tomatoes are going wild/)).toBeInTheDocument();
+    // Scoped to the pinned card itself, not just "this text exists
+    // somewhere on the page" — the excerpt text also happens to appear
+    // in the message's own feed card, so a looser assertion here would
+    // pass even if pinExcerpt() silently fell back to "(pinned)" (a
+    // real bug this exact test caught once already, via a screenshot,
+    // not the test itself — tightened afterward so it would catch it
+    // on its own next time).
+    const pinnedHeading = screen.getByText(/Pinned in The Garden Table/);
+    const pinnedCard = pinnedHeading.closest("div")!.parentElement!;
+    expect(pinnedCard).toHaveTextContent(/Tomatoes are going wild/);
+    expect(pinnedCard).not.toHaveTextContent("(pinned)");
 
     expect(screen.getByText("Move tool-shed hours to weekends")).toBeInTheDocument();
     expect(screen.getByText("Open")).toBeInTheDocument();
