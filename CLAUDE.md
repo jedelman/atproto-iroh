@@ -166,6 +166,67 @@ seam becomes obvious once a few such PRs or separate apps actually
 exist, extract it then, from evidence, the same way this repo's own
 crate boundaries got decided.
 
+## Observability: release builds only, telemetry rides the sync primitive
+
+Jason's standing constraint (2026-09-23): **he usually won't have a
+debugger attached** when running this on his own devices. Two
+consequences, both policy from here forward:
+
+**Build release, not debug, as the default — always.** Confirmed the
+practical case for this live, not just in principle: building all four
+Android ABIs with `--debug` in this sandbox exhausted its entire disk
+allowance (debug's `debuginfo=2` made each target's `.a`/`.so` several
+times larger than the same target in release — four ABIs' worth of
+debug artifacts ran the sandbox out of space mid-build). Release is now
+the default for every `cargo tauri android build` / `cargo build`
+invocation in this repo's own workflow; `--debug` is for a real
+debugger session on a real device, not the default path, here or on
+Jason's own machine.
+
+**Telemetry is needed, and it should be built as just another synced
+record type, not a new channel.** Raised in conversation: can a Claude
+Code sandbox receive telemetry directly over iroh? Answered live, not
+assumed: **no, not this kind of sandbox, for three separate reasons.**
+(1) Outbound iroh discovery itself already fails here — confirmed twice
+this session (`tests/control.rs`, and two real CLI processes) dialing a
+bare `did:iroh` under `NetworkPreset::N0` gets "No addressing
+information available / all address lookup services failed"; this
+environment's egress is an HTTPS-only proxy (its own README says so)
+and iroh's relay/DNS discovery doesn't ride on that path — direct QUIC
+between two peers *already inside* the sandbox works fine (that's
+exactly what the control-endpoint tests prove), it's specifically
+*reaching out* to iroh's real relay infrastructure that's blocked. (2)
+Nothing indicates this container has any public inbound listener at
+all — it's an ephemeral box behind an egress-only proxy, not something
+an external phone could dial into even if the discovery problem in (1)
+were solved (not independently verified from the outside — there's no
+way to test that from inside the sandbox alone — but nothing suggests
+otherwise either). (3) The container is reclaimed when the session
+ends regardless, so it's not durable even if reachable.
+
+**The actual design, which reuses everything already built rather than
+inventing a new transport**: telemetry is an append-only record type,
+same shape as `messaging`/`tagging` — one entry per event, written to a
+namespace the device already owns, synced by the exact same mechanism
+as everything else here. No phone-home, no new channel, same
+capability-scoped trust model as every other record type: nothing
+leaves the device except into a namespace whose capability Jason
+explicitly controls. Two real sink options, not mutually exclusive:
+- **The org's durable relay box** (the Raspberry-Pi-as-sold-hardware
+  design, above) as the always-on receiver — a device syncs its own
+  telemetry namespace to it the same way it syncs anything else.
+- **A future Claude Code session with real network access** (unlike
+  this specific locked-down sandbox) doing an ordinary `join <ticket>`
+  + `dump`/query against that namespace when Jason wants eyes on it —
+  no different from inspecting any other namespace this repo already
+  knows how to read.
+
+Not built yet: the telemetry record type/module itself, the panic-hook
+or `tracing`-layer wiring to actually populate it, and which of the two
+sink options (or both) Jason wants wired up first. This section records
+the direction and the reasoning, not a commitment to build it this
+session.
+
 ## Federation model, platform priority, and background execution
 
 Jason's framing (2026-09-22): this is for **tight autonomous orgs to
