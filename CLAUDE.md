@@ -56,9 +56,10 @@ section has the full account, including a real Rust-side fix the build
 required despite an earlier claim that none would be needed) but none
 have actually been installed and clicked through on a real device or
 emulator yet (none available in this sandbox), and there's no real
-release keystore, only a local throwaway debug one; QR scanning
-(generation only); mute/profile UI has no CLI parity for profile
-specifically; and no thumbnailing/format validation on images.
+release keystore, only a local throwaway debug one; QR scanning is now
+built both ways (generate and read back, Client section below) but
+unverified on a real camera; mute/profile UI has no CLI parity for
+profile specifically; and no thumbnailing/format validation on images.
 If a future `iroh-docs` upgrade or new finding turns any of the resolved
 SPEC.md forks out to be wrong, don't patch around it quietly — revise
 the relevant section the same way every previous revision is recorded,
@@ -106,7 +107,10 @@ matters.
 `src-tauri` shape) depending on `atproto-iroh-core` as an ordinary path
 dependency, not code added to the core crate itself. 28 commands now,
 across identity/namespace/sharing, the generic inspector, QR ticket
-rendering, Shared doc (with conflict-visibility UX), Messaging, Images,
+rendering — plus QR *scanning* now too (2026-09-23), read back via a
+vendored `jsQR` and `getUserMedia`, no new Tauri command since it's pure
+client-side JS; own README has the real Tauri-3-alpha plugin dead end
+this worked around — Shared doc (with conflict-visibility UX), Messaging, Images,
 Tagging (cross-lexicon), Members/Profile, Mute, and governance (real
 `Founding`-based genesis state, not a placeholder) — a plain HTML/JS/CSS
 frontend, no bundler, no framework. Exact command names, what each does,

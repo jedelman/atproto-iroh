@@ -55,3 +55,10 @@ label {
   border: 1px solid currentColor;
   padding: 0.5rem;
 }
+
+#scan-video {
+  display: block;
+  width: 100%;
+  max-width: 20rem;
+  border: 1px solid currentColor;
+}

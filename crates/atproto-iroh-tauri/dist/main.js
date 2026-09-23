@@ -118,6 +118,93 @@ document
     }
   });
 
+// --- Scan QR (camera -> ticket-in) -----------------------------------
+//
+// Pure client-side decode via the vendored jsQR (dist/vendor/), no Tauri
+// command involved — getUserMedia plus a decode loop is a plain web
+// platform API, so it works the same shape on desktop (if a webcam
+// exists) and mobile, no native plugin needed. The only maintained
+// Tauri barcode-scanner plugin requires Tauri 3.0 alpha (this app is on
+// stable Tauri 2), so a native plugin wasn't an option — see README.
+// Camera permission on Android goes through wry's own WebChromeClient,
+// confirmed against the vendored wry source: it already handles
+// getUserMedia's video-capture permission request, prompting for
+// android.permission.CAMERA at runtime. This file only needs the
+// manifest to declare that permission (see README's Android section for
+// the one-time gen/android patch, since that directory regenerates).
+const scanBtn = document.getElementById("scan-qr");
+const scanViewEl = document.getElementById("scan-view");
+const scanVideoEl = document.getElementById("scan-video");
+const scanCancelBtn = document.getElementById("scan-cancel");
+const scanStatusEl = document.getElementById("scan-status");
+const ticketInEl = document.getElementById("ticket-in");
+
+let scanStream = null;
+let scanCanvas = null;
+let scanRunning = false;
+
+function stopScan() {
+  scanRunning = false;
+  if (scanStream) {
+    for (const track of scanStream.getTracks()) track.stop();
+    scanStream = null;
+  }
+  scanVideoEl.srcObject = null;
+  scanViewEl.hidden = true;
+}
+
+function scanFrame() {
+  if (!scanRunning) return;
+  if (scanVideoEl.readyState === scanVideoEl.HAVE_ENOUGH_DATA) {
+    scanCanvas.width = scanVideoEl.videoWidth;
+    scanCanvas.height = scanVideoEl.videoHeight;
+    const ctx = scanCanvas.getContext("2d");
+    ctx.drawImage(scanVideoEl, 0, 0, scanCanvas.width, scanCanvas.height);
+    const frame = ctx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
+    // jsQR verified live against this exact vendored file: decodes a
+    // real QR-encoded ticket string byte-for-byte (see the repo's
+    // vendoring notes) — this isn't an untested dependency drop-in.
+    const result = jsQR(frame.data, frame.width, frame.height);
+    if (result && result.data) {
+      ticketInEl.value = result.data;
+      scanStatusEl.textContent =
+        "scanned — review the ticket above, then Join";
+      stopScan();
+      return;
+    }
+  }
+  requestAnimationFrame(scanFrame);
+}
+
+scanBtn.addEventListener("click", async () => {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    scanStatusEl.textContent =
+      "error: camera access isn't available here (no getUserMedia — an older webview, or a non-secure context) — paste the ticket instead";
+    return;
+  }
+  scanStatusEl.textContent = "requesting camera…";
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+    });
+  } catch (err) {
+    scanStatusEl.textContent = `error: ${err.message || err} — paste the ticket instead`;
+    return;
+  }
+  scanCanvas = scanCanvas || document.createElement("canvas");
+  scanVideoEl.srcObject = scanStream;
+  await scanVideoEl.play();
+  scanViewEl.hidden = false;
+  scanStatusEl.textContent = "scanning…";
+  scanRunning = true;
+  requestAnimationFrame(scanFrame);
+});
+
+scanCancelBtn.addEventListener("click", () => {
+  stopScan();
+  scanStatusEl.textContent = "scan cancelled";
+});
+
 // --- Members / Profile ---------------------------------------------
 
 const membersOutEl = document.getElementById("members-out");

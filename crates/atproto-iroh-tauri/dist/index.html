@@ -162,6 +162,21 @@
           </label>
           <button type="submit">Join</button>
         </form>
+        <button id="scan-qr" type="button">Scan QR</button>
+        <p class="hint">
+          Reads a ticket straight from a QR code via the device camera —
+          the other half of "Show as QR" above. Decoding happens
+          entirely on-device (a vendored <code>jsQR</code>, see
+          <code>dist/vendor/</code>) — nothing about a scan is sent
+          anywhere, it just fills in the field above. Needs camera
+          access; if it's denied, or there's no camera (most desktops
+          running this reference build), paste the ticket text instead.
+        </p>
+        <div id="scan-view" hidden>
+          <video id="scan-video" playsinline muted></video>
+          <button id="scan-cancel" type="button">Cancel scan</button>
+        </div>
+        <p id="scan-status" class="value"></p>
         <p id="joined" class="value">—</p>
       </section>
 
@@ -435,6 +450,11 @@
         <div id="inspector-out"></div>
       </section>
     </main>
+    <!-- Plain script, not a module, loaded before main.js on purpose: a
+         module script defers until after the document parses, so
+         loading order alone (this tag first) guarantees window.jsQR
+         exists by the time main.js's scan handler runs. -->
+    <script src="vendor/jsQR.min.js"></script>
     <script type="module" src="main.js"></script>
   </body>
 </html>

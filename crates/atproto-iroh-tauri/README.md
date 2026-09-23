@@ -133,10 +133,10 @@ this is a UI on top of.
   is deliberately scoped per-feature, not global. A muted author's
   messages still sync and still count for everyone else — this only
   changes what this one reader's client shows them.
-- **QR codes** (`ticket_to_qr`): renders a ticket as an SVG QR, nothing
-  else — no scanning/camera decode built (see below), no native OS share
-  sheet integration (unverified whether Tauri 2 has one; not checked).
-  No restriction on which access mode gets turned into a code: a `Write`
+- **QR codes** (`ticket_to_qr`, generation; camera scanning — built
+  2026-09-23, see below): renders a ticket as an SVG QR. No native OS
+  share sheet integration (unverified whether Tauri 2 has one; not
+  checked). No restriction on which access mode gets turned into a code: a `Write`
   ticket posted publicly is a real, intended pattern here, not a mistake
   to guard against — a public inbox, a dead drop, a graffiti wall.
   Mechanically safe by construction, not by policy: `RecordIdentifier`
@@ -151,6 +151,37 @@ this is a UI on top of.
   code physically posted somewhere is the same trust shape as a ticket
   shared in a DM — nothing discoverable until someone already has the
   capability — just analog instead of digital.
+- **QR scanning** (`dist/main.js`'s "Scan QR" button, next to Join):
+  reads a ticket back out of a QR code via `getUserMedia` + a decode
+  loop, no Tauri command involved — pure client-side JS, the same shape
+  on desktop and mobile. The obvious approach — a Tauri plugin — turned
+  out not to be an option: the only maintained one
+  (`tauri-plugin-barcode-scanner`) depends on `tauri = "3.0.0-alpha.2"`,
+  and this app is on stable Tauri 2 (checked live against the crate's
+  own `Cargo.toml` before writing any code, not assumed). Went with a
+  vendored decoder instead (`dist/vendor/jsQR.min.js`, jsQR 1.4.0,
+  Apache-2.0) — fits this reference client's own "no bundler, no
+  framework" rule better than a plugin would have anyway. Verified live,
+  not just wired: a Node script round-trips a real QR-encoded string
+  through the exact vendored file and confirms an exact match (the risk
+  worth checking was the vendored/minified build itself, not the
+  well-established jsQR algorithm). **Camera permission on Android**
+  goes through wry's own `WebChromeClient.onPermissionRequest`
+  (confirmed against the vendored wry 0.55.1 source: it already handles
+  `getUserMedia`'s video-capture request, prompting for
+  `android.permission.CAMERA` at runtime) — this app only needed to
+  declare that permission in the manifest, done via
+  `scripts/patch-android-manifest.sh` (idempotent, since `gen/android`
+  regenerates from scratch and isn't committed — run it again after any
+  fresh `cargo tauri android init`). **Not verified live**: an actual
+  camera scan on a real device or emulator (none available in this
+  sandbox) — the decode logic and the Android permission path are each
+  independently confirmed, but the full path (open camera → point at a
+  real QR → fill the field) hasn't been clicked through by a human yet.
+  Desktop camera support depends on the OS webview actually exposing
+  `getUserMedia` in a secure context; the code degrades to a visible
+  error message (not a crash) if it's unavailable, but that path is
+  also unverified without a desktop machine with a webcam to try it on.
 - **Governance** (`fold::fold_namespace`/`propose`/`signal`, `dist`'s
   "Governance" section): `list_proposals` re-runs the whole fold on
   every call and returns each `Proposal` with its live `Ratification`
@@ -235,13 +266,7 @@ this is a UI on top of.
 This proves the wiring, not a usable app. Missing, in roughly the order
 a real client would need them:
 
-- **QR scanning.** Generation only. Decoding would need webview camera
-  access (`getUserMedia` + a JS decoder, e.g. `jsQR`) — plausible on
-  desktop since Tauri's webview is a real browser engine, but camera
-  permission behavior across WebKit/WebView2/webkit2gtk specifically
-  wasn't checked in this session, and Tauri 2's mobile story (where a
-  camera matters most) is already flagged elsewhere as less mature than
-  desktop. Worth verifying before building, not assuming.
+- ~~QR scanning.~~ **Built (2026-09-23)** — see "What's real here," above.
 - **Any error/loading state beyond `textContent = "error: ..."`.** Fine
   for proving the wiring, not fine for anyone else to use.
 - **No automatic merge for concurrent doc revisions.** The Shared doc
