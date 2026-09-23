@@ -59,6 +59,10 @@ export const tauriClient: Client = {
       replyToRkey: null,
     }),
   listImages: (namespaceId) => invoke<ImageView[]>("list_images", { namespaceId }),
+  uploadImage: (namespaceId, bytes, contentType, caption) =>
+    invoke<string>("upload_image", { namespaceId, bytes, contentType, caption }),
+  loadImageBytes: (namespaceId, authorHex, rkey) =>
+    invoke<number[] | null>("load_image_bytes", { namespaceId, authorHex, rkey }),
   listProposals: (namespaceId) =>
     invoke<ProposalView[]>("list_proposals", { namespaceId }),
   governanceState: (namespaceId) =>

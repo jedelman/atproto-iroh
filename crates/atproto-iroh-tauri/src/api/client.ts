@@ -55,6 +55,19 @@ export interface Client {
    * frontend pass — real gap, not silently dropped, see README). */
   sendMessage(namespaceId: string, text: string): Promise<string>;
   listImages(namespaceId: string): Promise<ImageView[]>;
+  /** Uploads an image — bytes cross the Tauri IPC boundary as a plain
+   * number array (no separate binary-transfer path in this reference
+   * app; fine at reasonable sizes, not tuned for large files). Returns
+   * the new image's rkey. */
+  uploadImage(
+    namespaceId: string,
+    bytes: number[],
+    contentType: string,
+    caption: string | null,
+  ): Promise<string>;
+  /** One image's raw bytes, or null if this node hasn't synced them yet
+   * — never a silent placeholder. */
+  loadImageBytes(namespaceId: string, authorHex: string, rkey: string): Promise<number[] | null>;
   listProposals(namespaceId: string): Promise<ProposalView[]>;
   governanceState(namespaceId: string): Promise<GovernanceStateView>;
   /** Posts a new decision/poll — hardcoded to `GovernanceClass::General`,

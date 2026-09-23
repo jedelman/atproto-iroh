@@ -10,7 +10,7 @@ import { Sticker } from "../components/Sticker";
 import { profileFor, useTable } from "../hooks/useTable";
 import { TABLE_DOC_ID, useTableDoc } from "../hooks/useTableDoc";
 import { hasPossibleConflict } from "../lib/docConflict";
-import { api, type MessageView, type ProfileView, type ProposalView } from "../api";
+import { api, type ImageView, type MessageView, type ProfileView, type ProposalView } from "../api";
 
 type Tab = "messages" | "decisions" | "photos" | "docs";
 
@@ -32,6 +32,9 @@ export function TableDetail() {
     for (const m of allMessages) map.set(m.subject, m);
     return map;
   }, [allMessages]);
+
+  const [uploadedImages, setUploadedImages] = useState<ImageView[]>([]);
+  const allImages = useMemo(() => [...uploadedImages, ...images], [uploadedImages, images]);
 
   if (loading) {
     return (
@@ -171,19 +174,13 @@ export function TableDetail() {
           />
         )}
 
-        {tab === "photos" &&
-          (images.length === 0 ? (
-            <EmptyTab text="No photos yet." />
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-              {images.map((img) => (
-                <div key={img.rkey}>
-                  <div style={{ aspectRatio: "1", borderRadius: 12, background: "linear-gradient(155deg, var(--gold), var(--accent-strong))" }} />
-                  {img.caption && <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--text-2)" }}>{img.caption}</p>}
-                </div>
-              ))}
-            </div>
-          ))}
+        {tab === "photos" && (
+          <PhotosPanel
+            tableId={id ?? ""}
+            images={allImages}
+            onUploaded={(img) => setUploadedImages((prev) => [img, ...prev])}
+          />
+        )}
 
         {tab === "docs" && <SharedDoc tableId={id ?? ""} members={members} />}
       </div>
@@ -277,6 +274,164 @@ function Composer({ tableId, onSent }: { tableId: string; onSent: (m: MessageVie
         Send
       </button>
     </div>
+  );
+}
+
+function PhotosPanel({
+  tableId,
+  images,
+  onUploaded,
+}: {
+  tableId: string;
+  images: ImageView[];
+  onUploaded: (img: ImageView) => void;
+}) {
+  const [caption, setCaption] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleFile(file: File) {
+    setUploading(true);
+    setError(null);
+    try {
+      // Same reasoning as Composer's send(): the optimistic entry's
+      // author_hex has to be the real self hex, not a placeholder — an
+      // ImageThumb keyed off a wrong hex would fail its own
+      // loadImageBytes lookup (mockClient stores bytes under the real
+      // hex the upload actually used).
+      const did = await api.nodeDid();
+      const selfAuthorHex = did?.replace(/^did:iroh:/, "") ?? "";
+      const buffer = await file.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(buffer));
+      const rkey = await api.uploadImage(
+        tableId,
+        bytes,
+        file.type || "application/octet-stream",
+        caption.trim() || null,
+      );
+      onUploaded({
+        author_hex: selfAuthorHex,
+        rkey,
+        content_type: file.type || "application/octet-stream",
+        len: bytes.length,
+        caption: caption.trim() || null,
+        created_at: new Date().toISOString(),
+      });
+      setCaption("");
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <input
+          value={caption}
+          onChange={(e) => setCaption(e.target.value)}
+          placeholder="Caption (optional)"
+          style={{
+            flexGrow: 1,
+            minWidth: 140,
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+            color: "var(--text)",
+            padding: "9px 12px",
+            fontSize: 13.5,
+          }}
+        />
+        <label
+          style={{
+            background: "var(--accent)",
+            color: "var(--ink)",
+            border: "none",
+            borderRadius: 10,
+            padding: "9px 16px",
+            fontSize: 13.5,
+            fontWeight: 700,
+            cursor: uploading ? "default" : "pointer",
+            opacity: uploading ? 0.5 : 1,
+          }}
+        >
+          {uploading ? "Uploading…" : "Add photo"}
+          <input
+            type="file"
+            accept="image/*"
+            disabled={uploading}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) handleFile(file);
+            }}
+            style={{ display: "none" }}
+          />
+        </label>
+      </div>
+      {error && <p style={{ margin: 0, fontSize: 12.5, color: "var(--rose)" }}>{error}</p>}
+
+      {images.length === 0 ? (
+        <EmptyTab text="No photos yet." />
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+          {images.map((img) => (
+            <div key={img.rkey}>
+              <ImageThumb tableId={tableId} image={img} />
+              {img.caption && <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--text-2)" }}>{img.caption}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ImageThumb({ tableId, image }: { tableId: string; image: ImageView }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [notSynced, setNotSynced] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    (async () => {
+      const bytes = await api.loadImageBytes(tableId, image.author_hex, image.rkey);
+      if (cancelled) return;
+      if (bytes === null) {
+        setNotSynced(true);
+        return;
+      }
+      const blob = new Blob([new Uint8Array(bytes)], { type: image.content_type });
+      objectUrl = URL.createObjectURL(blob);
+      setSrc(objectUrl);
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [tableId, image.author_hex, image.rkey, image.content_type]);
+
+  if (notSynced) {
+    return (
+      <div
+        style={{ aspectRatio: "1", borderRadius: 12, background: "var(--surface-2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "var(--text-3)", textAlign: "center", padding: 8 }}
+      >
+        not synced yet
+      </div>
+    );
+  }
+
+  if (!src) {
+    return <div style={{ aspectRatio: "1", borderRadius: 12, background: "var(--surface-2)" }} />;
+  }
+
+  return (
+    <img
+      src={src}
+      alt={image.caption ?? image.rkey}
+      style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 12, display: "block" }}
+    />
   );
 }
 

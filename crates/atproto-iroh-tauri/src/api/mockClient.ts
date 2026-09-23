@@ -42,6 +42,20 @@ const joinedTableIds = new Set<string>(TABLES_YOU_ARE_IN);
 // returns for real, so useDocConflict's logic never has to know it's mocked.
 const docs: Record<string, Record<string, DocRevision[]>> = structuredClone(DOC_REVISIONS);
 const proposals: Record<string, typeof PROPOSALS[string]> = structuredClone(PROPOSALS);
+const images: Record<string, typeof IMAGES[string]> = structuredClone(IMAGES);
+// Real byte storage, keyed by `${namespaceId}/${author_hex}/${rkey}` —
+// separate from `images` (metadata only) the same way the real backend
+// keeps them as two entries sharing one rkey (namespace::put_bytes),
+// so listing a gallery never means holding every image's bytes at once.
+// The pre-existing fixture image (Sequoia's overlook photo) deliberately
+// has no entry here — it was never "uploaded" through this session, so
+// loadImageBytes honestly returns null for it, same as a real node that
+// hasn't synced those bytes yet.
+const imageBytes = new Map<string, number[]>();
+
+function imageBytesKey(namespaceId: string, authorHex: string, rkey: string) {
+  return `${namespaceId}/${authorHex}/${rkey}`;
+}
 
 let nextRkeySeq = 9000;
 function mockRkey() {
@@ -127,7 +141,26 @@ export const mockClient: Client = {
   },
 
   async listImages(namespaceId) {
-    return IMAGES[namespaceId] ?? [];
+    return images[namespaceId] ?? [];
+  },
+
+  async uploadImage(namespaceId, bytes, contentType, caption) {
+    const rkey = mockRkey();
+    images[namespaceId] ??= [];
+    images[namespaceId].push({
+      author_hex: SELF_AUTHOR_HEX,
+      rkey,
+      content_type: contentType,
+      len: bytes.length,
+      caption: caption ?? undefined,
+      created_at: new Date().toISOString(),
+    });
+    imageBytes.set(imageBytesKey(namespaceId, SELF_AUTHOR_HEX, rkey), bytes);
+    return rkey;
+  },
+
+  async loadImageBytes(namespaceId, authorHex, rkey) {
+    return imageBytes.get(imageBytesKey(namespaceId, authorHex, rkey)) ?? null;
   },
 
   async listProposals(namespaceId) {

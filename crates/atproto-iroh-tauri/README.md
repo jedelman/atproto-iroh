@@ -32,7 +32,7 @@ the filter chips below it filter the Feed in place instead; the dashed
 "+ Join" circle at the end of that strip (and the Feed's own empty
 state) opens Join.
 
-Three of the Table detail tabs are new since Composing shipped:
+Four of the Table detail tabs are new since Composing shipped:
 - **Composer** (Messages tab) — optimistic: the sent message appears
   immediately, resolved through the real self author hex via
   `nodeDid()` rather than a placeholder, so it renders through
@@ -74,6 +74,30 @@ Three of the Table detail tabs are new since Composing shipped:
   simulates the one thing this UI acts on immediately (a Block moves a
   decision to a visibly-objected state), since real ratification also
   depends on the deadline passing, which the mock doesn't simulate.
+- **Photos** — a real upload (file input + optional caption) and a real
+  gallery, replacing what used to be a decorative gradient placeholder
+  for every image regardless of content. `Client` gains `uploadImage`/
+  `loadImageBytes`; `tauriClient` passes bytes across the Tauri IPC
+  boundary as a plain number array, same as the old plain-JS app did
+  (no separate binary-transfer path in this reference app);
+  `mockClient` keeps a real byte store (`Map`, keyed by
+  `${namespaceId}/${authorHex}/${rkey}`) separate from image metadata —
+  mirroring the real backend's own split between `list_images` and
+  `load_image_bytes` — so a freshly-uploaded photo's bytes actually
+  round-trip through `ImageThumb`'s `loadImageBytes` call into a real
+  `Blob` object URL, not a `content_type`-tinted rectangle. The
+  pre-existing fixture photo (Sequoia's overlook, from before this
+  session) deliberately has no bytes in that store, so it renders the
+  same "not synced yet" state a real node that hasn't synced those
+  bytes would show — an honest gap, not silently faked. Same optimistic
+  self-author-hex pattern as Composer's `send()`: the local entry
+  resolves through `nodeDid()` before `ImageThumb` ever tries to load
+  its bytes, so the lookup key actually matches what `uploadImage` just
+  wrote. `src/test/setup.ts` gained two small jsdom polyfills
+  (`File.prototype.arrayBuffer`, `URL.createObjectURL`/
+  `revokeObjectURL`) neither of which jsdom implements — real Tauri-
+  webview/browser APIs missing only from the test environment, not
+  worked around in the app code itself.
 
 **Screenshot-verified, not just test-verified** — a real Playwright +
 headless-Chromium pipeline against `npm run dev`'s mock-backed browser
@@ -89,7 +113,7 @@ afterward so they'd be caught by the suite next time, not just eyeballs.
 **Not yet ported — a real, current gap, not an oversight**: the old
 plain-JS app had working UI for every one of its 28 commands (Messaging
 thread view *outside* a Table's own tab — reply-to isn't wired into the
-Composer yet, Images upload, the full Governance UI beyond General-class
+Composer yet, the full Governance UI beyond General-class
 decisions — no admit/remove-cosigner or policy-change proposal forms,
 Tagging, Mute, Members/Profile editing, QR generate *and* scan, the raw
 inspector, relay/control). Functionally, this rebuild still covers

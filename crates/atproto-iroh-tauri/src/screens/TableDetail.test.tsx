@@ -125,6 +125,27 @@ describe("TableDetail", () => {
     expect(screen.getByDisplayValue(/Draft: workday Saturday/)).toBeInTheDocument();
   });
 
+  it("uploads a photo and shows it immediately in the gallery", async () => {
+    renderTable(gardenTableId);
+    await waitFor(() => expect(screen.getByText("The Garden Table")).toBeInTheDocument());
+    await userEvent.click(screen.getByText("Photos"));
+    expect(screen.getByText("No photos yet.")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("Caption (optional)"), "seedlings coming up");
+    const file = new File(["fake-jpeg-bytes"], "seedlings.jpg", { type: "image/jpeg" });
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await userEvent.upload(fileInput, file);
+
+    expect(await screen.findByText("seedlings coming up")).toBeInTheDocument();
+    // The gallery re-renders with a real <img> once loadImageBytes
+    // resolves — its src is a blob: object URL built from the exact
+    // bytes just uploaded, proving the round trip end to end rather
+    // than just that *a* thumbnail placeholder appeared.
+    const img = await screen.findByAltText("seedlings coming up", {}, { timeout: 3000 });
+    expect(img).toHaveAttribute("src", expect.stringMatching(/^blob:/));
+    expect(screen.queryByText("No photos yet.")).not.toBeInTheDocument();
+  });
+
   it("shows a real not-found state for an unknown table id", async () => {
     renderTable("table-does-not-exist");
     await waitFor(() =>
