@@ -26,6 +26,7 @@ export const tauriClient: Client = {
     // "Table name" record exists in the backend yet.
     return ids.map((id) => ({ id, name: `Table ${id.slice(0, 8)}…` }));
   },
+  joinNamespace: (ticket) => invoke<string>("join_namespace", { ticket }),
   createNamespaceWithProfile: (name, category, avatar) =>
     invoke("create_namespace_with_profile", { name, category, avatar }),
   updateProfile: (namespaceId, profile: Omit<NodeProfile, "created_at">) =>

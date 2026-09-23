@@ -2,6 +2,7 @@ import { Navigate, Route, HashRouter, Routes } from "react-router-dom";
 import { Onboarding } from "./screens/Onboarding";
 import { Feed } from "./screens/Feed";
 import { TableDetail } from "./screens/TableDetail";
+import { Join } from "./screens/Join";
 import { useProfileDraft } from "./hooks/useProfileDraft";
 
 // HashRouter, not BrowserRouter: Tauri serves the frontend from a
@@ -18,6 +19,7 @@ export function App() {
           <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/feed" element={<Feed />} />
           <Route path="/table/:id" element={<TableDetail />} />
+          <Route path="/join" element={<Join />} />
         </Routes>
       </div>
     </HashRouter>

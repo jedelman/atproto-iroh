@@ -28,6 +28,7 @@ export const SELF_AUTHOR_HEX = "5e1f".repeat(16);
 const GARDEN_TABLE_ID = "table-garden0000000000000000000000000000000000000000000000001";
 const HIKERS_TABLE_ID = "table-hikers0000000000000000000000000000000000000000000001";
 const PARENTS_TABLE_ID = "table-parents000000000000000000000000000000000000000000001";
+const BOOKCLUB_TABLE_ID = "table-bookclub00000000000000000000000000000000000000000001";
 
 export const AUTHORS = {
   you: SELF_AUTHOR_HEX,
@@ -62,7 +63,31 @@ export const TABLES: MockTable[] = [
     name: "New Parents Crew",
     memberAuthorHexes: [AUTHORS.you, AUTHORS.priya, AUTHORS.devon],
   },
+  {
+    // Deliberately doesn't include AUTHORS.you — this is the Table the
+    // mock QR-scan/join demo flow adds you to, so joining actually
+    // changes something observable (a new Table appears) rather than
+    // re-joining one already in TABLES_YOU_ARE_IN.
+    id: BOOKCLUB_TABLE_ID,
+    name: "Thursday Book Club",
+    memberAuthorHexes: [AUTHORS.priya, AUTHORS.sequoia],
+  },
 ];
+
+/** Which Tables "you" (SELF_AUTHOR_HEX) already hold a capability into
+ * before any mock join happens — everything in TABLES except the one
+ * reserved for the join demo. `mockClient.ts`'s `listTables`/
+ * `listNamespaces` are scoped to this, not all of `TABLES`. */
+export const TABLES_YOU_ARE_IN = TABLES.filter((t) => t.id !== BOOKCLUB_TABLE_ID).map((t) => t.id);
+
+/** Fake "tickets" the mock Join/QR-scan flow accepts — stand-ins for a
+ * real `DocTicket` string, which the mock backend has no way to parse
+ * (there's no real iroh-docs engine behind it). Scanning/pasting
+ * anything else should fail the same way a malformed real ticket would.
+ */
+export const MOCK_TICKETS: Record<string, string> = {
+  "mock-ticket-bookclub": BOOKCLUB_TABLE_ID,
+};
 
 export const PROFILES: Record<string, NodeProfile> = {
   [AUTHORS.you]: {

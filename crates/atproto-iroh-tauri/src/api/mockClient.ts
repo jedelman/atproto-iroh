@@ -10,10 +10,12 @@ import {
   GOVERNANCE_STATE,
   IMAGES,
   MESSAGES,
+  MOCK_TICKETS,
   PROFILES,
   PROPOSALS,
   SELF_AUTHOR_HEX,
   TABLES,
+  TABLES_YOU_ARE_IN,
   TAGS,
 } from "../mocks/fixtures";
 import { latestPerAuthorWithLabel } from "../lib/pins";
@@ -34,6 +36,7 @@ for (const table of TABLES) {
 }
 const tags: Record<string, typeof TAGS[string]> = structuredClone(TAGS);
 const messages: Record<string, typeof MESSAGES[string]> = structuredClone(MESSAGES);
+const joinedTableIds = new Set<string>(TABLES_YOU_ARE_IN);
 
 let nextRkeySeq = 9000;
 function mockRkey() {
@@ -53,11 +56,24 @@ export const mockClient: Client = {
   },
 
   async listNamespaces() {
-    return TABLES.map((t) => t.id);
+    return [...joinedTableIds];
   },
 
   async listTables() {
-    return TABLES.map(({ id, name }) => ({ id, name }));
+    return TABLES.filter((t) => joinedTableIds.has(t.id)).map(({ id, name }) => ({ id, name }));
+  },
+
+  async joinNamespace(ticket) {
+    const tableId = MOCK_TICKETS[ticket.trim()];
+    if (!tableId) {
+      throw new Error("invalid ticket");
+    }
+    joinedTableIds.add(tableId);
+    // Real `Node::join` doesn't add the joiner as a *member* — capability
+    // and membership are different things here (SPEC.md §3.4) — so this
+    // deliberately doesn't add SELF_AUTHOR_HEX to the table's profiles;
+    // matches what a real join actually does.
+    return tableId;
   },
 
   async createNamespaceWithProfile(name, category, avatar) {

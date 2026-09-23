@@ -35,6 +35,9 @@ export interface Client {
   listNamespaces(): Promise<string[]>;
   /** Every Table this node holds a capability into, with a display name. */
   listTables(): Promise<TableSummary[]>;
+  /** Imports a Table from a shared ticket string (scanned or pasted).
+   * Returns the new Table's id. */
+  joinNamespace(ticket: string): Promise<string>;
   createNamespaceWithProfile(
     name: string,
     category: NodeCategory,

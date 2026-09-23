@@ -19,14 +19,18 @@ Serif/Hanken Grotesk, from the confirmed mockup artifact), the `Sticker`
 component (built-in blob avatars), the **Feed** screen (the unified
 cross-Table timeline — messages/photos/decisions merged, Table filter
 chips, the pinned-message excerpt), the **Onboarding** screen (sticker +
-name picker), and the **Table detail** screen (Members-first landing,
-the Table's pinned message(s) in full, tabbed Messages/Decisions/
-Photos — DESIGN_BRIEF.md §4). All wired to a real API abstraction
+name picker), the **Table detail** screen (Members-first landing, the
+Table's pinned message(s) in full, tabbed Messages/Decisions/Photos —
+DESIGN_BRIEF.md §4), and the **Join** screen (camera QR scan, re-ported
+from the old plain-JS app onto the real `jsqr` npm package, with a
+paste-a-ticket fallback). All wired to a real API abstraction
 (`src/api/`) that talks to the actual Tauri backend when running inside
 Tauri and falls back to an in-memory mock backend
 (`src/api/mockClient.ts`) otherwise — see "Mock dataset and tests," below.
 Tapping a Table's sticker in the Feed navigates to its detail screen;
-the filter chips below it filter the Feed in place instead.
+the filter chips below it filter the Feed in place instead; the dashed
+"+ Join" circle at the end of that strip (and the Feed's own empty
+state) opens Join.
 
 **Screenshot-verified, not just test-verified** — a real Playwright +
 headless-Chromium pipeline against `npm run dev`'s mock-backed browser
@@ -313,17 +317,22 @@ remaining screens built to reach parity.
 This proves the wiring, not a usable app. Missing, in roughly the order
 a real client would need them:
 
-- **QR scanning — built earlier today, then removed along with the rest
-  of the plain-JS frontend it lived in.** Not a silent regression:
-  recorded here on purpose. The approach (vendored `jsQR` +
-  `getUserMedia`, no native plugin — the only maintained Tauri
-  barcode-scanner plugin needs an incompatible Tauri 3 alpha) is still
-  the right one and needs porting into a React screen; `jsqr` is
-  already an `npm` dependency of this rebuild for exactly that reason,
-  just not wired to any component yet.
-- **Every screen except Feed and Onboarding** — see "Frontend rebuild,"
-  above, for the full list and why this is a deliberate, temporary step
-  backward in feature coverage, not an oversight.
+- ~~QR scanning.~~ **Re-ported (2026-09-23)** — `src/hooks/
+  useQrScanner.ts`, the same `getUserMedia` + decode-loop approach as
+  the old plain-JS app, now against the real `jsqr` npm package instead
+  of a vendored file. Wired into the new **Join** screen
+  (`src/screens/Join.tsx`, at `/join`) — camera-first with a real
+  paste-a-ticket fallback, reachable from the Feed's empty state and
+  a persistent "+ Join" entry in the "your people" strip. Camera
+  access itself isn't testable in this sandbox (no real camera, and
+  jsdom can't fake `getUserMedia`) or in headless Chromium screenshots
+  — the paste-ticket path is fully tested instead
+  (`Join.test.tsx`: valid ticket → lands on the new table, invalid
+  ticket → real error, not a silent failure).
+- **Every screen except Feed, Onboarding, Table detail, and Join** —
+  see "Frontend rebuild," above, for the full list and why this is a
+  deliberate, temporary step backward in feature coverage, not an
+  oversight.
 - **Any error/loading state beyond a basic "Settling in…"/empty-state
   message.** Better than the old app's raw `textContent = "error:
   ..."` but still not a real design pass on error states.

@@ -111,6 +111,28 @@ export function Feed() {
                 </span>
               </Link>
             ))}
+            <Link
+              to="/join"
+              aria-label="Join or start a table"
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flexShrink: 0 }}
+            >
+              <div
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: "50%",
+                  border: "1.5px dashed var(--border)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth={2} strokeLinecap="round">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </div>
+              <span style={{ fontSize: 10.5, color: "var(--text-3)", fontWeight: 500 }}>Join</span>
+            </Link>
           </div>
 
           {/* Pinned excerpt */}
@@ -247,7 +269,10 @@ function EmptyTablesState() {
         No tables yet
       </p>
       <p style={{ fontSize: 14, color: "var(--text-2)", margin: 0 }}>
-        Scan a code to join one, or start your own.
+        <Link to="/join" style={{ color: "var(--accent)", fontWeight: 600 }}>
+          Scan a code
+        </Link>{" "}
+        to join one, or start your own.
       </p>
     </div>
   );
