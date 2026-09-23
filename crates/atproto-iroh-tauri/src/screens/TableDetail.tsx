@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Sticker } from "../components/Sticker";
 import { profileFor, useTable } from "../hooks/useTable";
+import { api, type MessageView } from "../api";
 
 type Tab = "messages" | "decisions" | "photos";
 
@@ -19,11 +20,18 @@ export function TableDetail() {
   );
   const [tab, setTab] = useState<Tab>("messages");
 
+  // Optimistic sends layered on top of the hook's own fetch — DESIGN_
+  // BRIEF.md §6: "should all feel immediate... the UI shouldn't
+  // visibly wait on network round-trips for local actions." Prepended
+  // (newest first, same convention useTable already reverses to).
+  const [sentMessages, setSentMessages] = useState<MessageView[]>([]);
+  const allMessages = useMemo(() => [...sentMessages, ...messages], [sentMessages, messages]);
+
   const messageBySubject = useMemo(() => {
-    const map = new Map<string, (typeof messages)[number]>();
-    for (const m of messages) map.set(m.subject, m);
+    const map = new Map<string, MessageView>();
+    for (const m of allMessages) map.set(m.subject, m);
     return map;
-  }, [messages]);
+  }, [allMessages]);
 
   if (loading) {
     return (
@@ -118,23 +126,38 @@ export function TableDetail() {
       </div>
 
       <div style={{ flexGrow: 1, padding: "var(--space-lg) var(--space-xl)", display: "flex", flexDirection: "column", gap: 12 }}>
-        {tab === "messages" &&
-          (messages.length === 0 ? (
-            <EmptyTab text="No messages yet — be the first to say something." />
-          ) : (
-            messages.map((m) => {
-              const author = profileFor(members, m.author_hex);
-              return (
-                <div key={m.rkey} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 14 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <Sticker id={author?.avatar} size={24} />
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>{author?.name ?? "Someone"}</span>
+        {tab === "messages" && (
+          <>
+            <Composer
+              tableId={id ?? ""}
+              onSent={(m) => setSentMessages((prev) => [m, ...prev])}
+            />
+            {allMessages.length === 0 ? (
+              <EmptyTab text="No messages yet — be the first to say something." />
+            ) : (
+              allMessages.map((m) => {
+                // No special-casing for "you" here: a member's own
+                // profile in *this* Table is looked up the same way as
+                // anyone else's. If it resolves to "Someone", that's
+                // real and honest — capability and profile are
+                // different things (SPEC.md §3.4); joining a Table
+                // grants the former, not the latter, so sending a
+                // message right after joining (before ever publishing
+                // a profile there) genuinely has no name to show yet.
+                const author = profileFor(members, m.author_hex);
+                return (
+                  <div key={m.rkey} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 14 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <Sticker id={author?.avatar} size={24} />
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{author?.name ?? "Someone"}</span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: 14, color: "var(--text)", lineHeight: 1.55 }}>{m.text}</p>
                   </div>
-                  <p style={{ margin: 0, fontSize: 14, color: "var(--text)", lineHeight: 1.55 }}>{m.text}</p>
-                </div>
-              );
-            })
-          ))}
+                );
+              })
+            )}
+          </>
+        )}
 
         {tab === "decisions" &&
           (proposals.length === 0 ? (
@@ -199,6 +222,75 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
     >
       {children}
     </button>
+  );
+}
+
+function Composer({ tableId, onSent }: { tableId: string; onSent: (m: MessageView) => void }) {
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+
+  async function send() {
+    const trimmed = text.trim();
+    if (!trimmed || sending) return;
+    setSending(true);
+    try {
+      // nodeDid() is "did:iroh:<hex>" — the real self author hex is
+      // needed here so the optimistic entry resolves through
+      // profileFor() exactly the way the real synced-back entry will,
+      // not a placeholder that would only coincidentally look right.
+      const did = await api.nodeDid();
+      const selfAuthorHex = did?.replace(/^did:iroh:/, "") ?? "";
+      const rkey = await api.sendMessage(tableId, trimmed);
+      onSent({
+        author_hex: selfAuthorHex,
+        rkey,
+        subject: `${selfAuthorHex}/network.essmesh.chat.message/${rkey}`,
+        text: trimmed,
+        reply_to: null,
+        created_at: new Date().toISOString(),
+      });
+      setText("");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 8 }}>
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") send();
+        }}
+        placeholder="Say something…"
+        style={{
+          flexGrow: 1,
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          color: "var(--text)",
+          padding: "10px 14px",
+          fontSize: 14,
+        }}
+      />
+      <button
+        onClick={send}
+        disabled={!text.trim() || sending}
+        style={{
+          background: "var(--accent)",
+          color: "var(--ink)",
+          border: "none",
+          borderRadius: 12,
+          padding: "10px 18px",
+          fontSize: 14,
+          fontWeight: 700,
+          opacity: !text.trim() || sending ? 0.5 : 1,
+        }}
+      >
+        Send
+      </button>
+    </div>
   );
 }
 

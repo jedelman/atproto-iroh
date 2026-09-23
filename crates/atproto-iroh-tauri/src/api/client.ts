@@ -49,6 +49,9 @@ export interface Client {
   ): Promise<void>;
   listProfiles(namespaceId: string): Promise<ProfileView[]>;
   listMessages(namespaceId: string): Promise<MessageView[]>;
+  /** Posts a message; no reply-to yet (threading isn't built in this
+   * frontend pass — real gap, not silently dropped, see README). */
+  sendMessage(namespaceId: string, text: string): Promise<string>;
   listImages(namespaceId: string): Promise<ImageView[]>;
   listProposals(namespaceId: string): Promise<ProposalView[]>;
   governanceState(namespaceId: string): Promise<GovernanceStateView>;

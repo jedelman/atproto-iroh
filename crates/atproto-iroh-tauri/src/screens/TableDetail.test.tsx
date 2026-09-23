@@ -45,6 +45,31 @@ describe("TableDetail", () => {
     expect(screen.getByText("Welcome! Water the beds Tue/Thu evenings, and grab whatever's ripe on your way out — that's what it's here for.")).toBeInTheDocument();
   });
 
+  it("sends a message and shows it immediately, then keeps it after a re-render", async () => {
+    renderTable(gardenTableId);
+    await waitFor(() => expect(screen.getByText("The Garden Table")).toBeInTheDocument());
+
+    await userEvent.type(screen.getByPlaceholderText("Say something…"), "Anyone have extra zucchini seeds?");
+    await userEvent.click(screen.getByText("Send"));
+
+    expect(await screen.findByText("Anyone have extra zucchini seeds?")).toBeInTheDocument();
+    // The input clears after a successful send.
+    expect(screen.getByPlaceholderText("Say something…")).toHaveValue("");
+
+    // A fresh render (simulating navigating back to this Table) should
+    // still show it — proves it actually landed in the mock backend's
+    // own state, not just local optimistic UI that vanishes on remount.
+    // findAllByText resolves as soon as it gets ANY non-empty match, so
+    // it returns after the first render's still-present instance alone
+    // — waitFor's own retry (re-running the whole assertion, including
+    // the query) is what's needed to wait for the second instance too.
+    renderTable(gardenTableId);
+    await waitFor(() => expect(screen.getAllByText("The Garden Table")).toHaveLength(2));
+    await waitFor(() =>
+      expect(screen.getAllByText("Anyone have extra zucchini seeds?")).toHaveLength(2),
+    );
+  });
+
   it("switches to the Decisions tab and shows a real decision", async () => {
     renderTable(gardenTableId);
     await waitFor(() => expect(screen.getByText("The Garden Table")).toBeInTheDocument());

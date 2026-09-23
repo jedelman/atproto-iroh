@@ -21,7 +21,11 @@ cross-Table timeline — messages/photos/decisions merged, Table filter
 chips, the pinned-message excerpt), the **Onboarding** screen (sticker +
 name picker), the **Table detail** screen (Members-first landing, the
 Table's pinned message(s) in full, tabbed Messages/Decisions/Photos —
-DESIGN_BRIEF.md §4), and the **Join** screen (camera QR scan, re-ported
+DESIGN_BRIEF.md §4, plus a message **Composer** in the Messages tab,
+optimistic — the sent message appears immediately, resolved through the
+real self author hex via `nodeDid()` rather than a placeholder, so it
+renders exactly the way the synced-back copy eventually will), and the
+**Join** screen (camera QR scan, re-ported
 from the old plain-JS app onto the real `jsqr` npm package, with a
 paste-a-ticket fallback). All wired to a real API abstraction
 (`src/api/`) that talks to the actual Tauri backend when running inside
@@ -45,11 +49,12 @@ afterward so they'd be caught by the suite next time, not just eyeballs.
 
 **Not yet ported — a real, current gap, not an oversight**: the old
 plain-JS app had working UI for every one of its 28 commands (Messaging
-thread view *outside* a Table's own tab, Images upload, Documents with
+thread view *outside* a Table's own tab — reply-to isn't wired into the
+Composer yet, Images upload, Documents with
 conflict-visibility, Governance/Polls creation forms, Tagging, Mute,
 Members/Profile editing, QR generate *and* scan, the raw inspector,
 relay/control). Functionally, this rebuild still covers *less* than the
-app it replaced; a deliberate trade (a real design direction on three
+app it replaced; a deliberate trade (a real design direction on four
 screens, over a complete-but-undesigned UI on eight) that needs the
 remaining screens built to reach parity.
 

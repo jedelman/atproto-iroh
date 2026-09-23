@@ -106,6 +106,21 @@ export const mockClient: Client = {
     return messages[namespaceId] ?? [];
   },
 
+  async sendMessage(namespaceId, text) {
+    const rkey = mockRkey();
+    const subject = `${SELF_AUTHOR_HEX}/network.essmesh.chat.message/${rkey}`;
+    messages[namespaceId] ??= [];
+    messages[namespaceId].push({
+      author_hex: SELF_AUTHOR_HEX,
+      rkey,
+      subject,
+      text,
+      reply_to: null,
+      created_at: new Date().toISOString(),
+    });
+    return rkey;
+  },
+
   async listImages(namespaceId) {
     return IMAGES[namespaceId] ?? [];
   },
