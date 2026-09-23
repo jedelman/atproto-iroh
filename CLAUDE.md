@@ -113,7 +113,14 @@ client-side JS; own README has the real Tauri-3-alpha plugin dead end
 this worked around — Shared doc (with conflict-visibility UX), Messaging, Images,
 Tagging (cross-lexicon), Members/Profile, Mute, and governance (real
 `Founding`-based genesis state, not a placeholder) — a plain HTML/JS/CSS
-frontend, no bundler, no framework. Exact command names, what each does,
+frontend, no bundler, no framework. **Superseded 2026-09-23**: this
+`dist/` frontend is being rebuilt in React + Vite per the confirmed
+`/shape` design brief (`crates/atproto-iroh-tauri/DESIGN_BRIEF.md`,
+and this document's own "Design context" section below) — a deliberate
+departure from "no bundler, no framework," not a regression from it;
+the 28 Tauri commands and everything else in this paragraph are
+unaffected, since this is a frontend-only rebuild over an unchanged
+backend. Exact command names, what each does,
 and what's still missing live in `crates/atproto-iroh-tauri/README.md`,
 kept current there rather than duplicated and re-drifting here; this
 section stays high-level on purpose. The inspector (`namespace::
@@ -212,6 +219,18 @@ model's "not a majority vote" framing (ratifies by default, absent
 enough objection) is unfamiliar to most people. The UI carries real
 weight in making silence-means-consent read as calm and legible, not as
 a loophole or a trick — this is a design problem, not just a copy one.
+
+**`/shape` ran against this context the same day** and produced a
+confirmed design brief — `crates/atproto-iroh-tauri/DESIGN_BRIEF.md`.
+Headline decisions from it, worth having here rather than only in that
+file: the frontend is being rebuilt in **React + Vite** (a real
+departure from the "plain HTML/JS/CSS, no bundler, no framework" rule
+that held until now — deliberate, chosen during the interview, not a
+regression from it), and a namespace is called a **"Table"** in every
+user-facing surface (`.impeccable.md`'s Vocabulary section has the
+reasoning). Nothing about `atproto-iroh-core` or the Tauri commands
+changes for this — it's a frontend-only rebuild over the existing,
+unchanged backend.
 
 ## Observability: release builds only, telemetry rides the sync primitive
 
