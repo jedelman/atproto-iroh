@@ -7,13 +7,21 @@ authors.workspace = true
 repository.workspace = true
 description = "Reference Tauri client for atproto-iroh — see ../README.md and ../../../CLAUDE.md's Client section for why Tauri."
 
+# Mobile links this crate as a library (no `main()` on Android/iOS —
+# `lib.rs`'s top doc comment); desktop's `main.rs` still builds an
+# ordinary `bin` that just calls into it. `rlib` keeps `cargo test`/
+# `cargo check` on this crate working the same as before the split.
+[lib]
+name = "atproto_iroh_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
 atproto-iroh-core = { path = "../../atproto-iroh-core" }
 iroh-docs = "0.101.0"
-tauri = "2"
+tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["sync"] }
