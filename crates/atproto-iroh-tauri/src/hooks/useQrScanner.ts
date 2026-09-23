@@ -15,7 +15,7 @@
 // app only needed the manifest declaration
 // (scripts/patch-android-manifest.sh), unaffected by this rebuild.
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
 
 export type ScanStatus = "idle" | "requesting" | "scanning" | "error";
@@ -83,6 +83,20 @@ export function useQrScanner(onDecode: (text: string) => void) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [tick]);
+
+  // Found in review: nothing stopped the camera when the consuming
+  // component unmounted mid-scan (e.g. navigating away via a Link
+  // while `status === "scanning"`) — only an explicit stop() call did,
+  // which a route change never triggers. Left the live tracks running
+  // and the browser's camera indicator on indefinitely. `stop` is
+  // referenced via a ref rather than as a dependency so this effect's
+  // cleanup always runs, not just on the render where `stop`'s
+  // (stable, but this is defensive) identity happened to change.
+  const stopRef = useRef(stop);
+  stopRef.current = stop;
+  useEffect(() => {
+    return () => stopRef.current();
+  }, []);
 
   return { status, error, videoRef, start, stop };
 }

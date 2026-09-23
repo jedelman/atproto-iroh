@@ -37,6 +37,20 @@ export function TableDetail() {
 
   const [uploadedImages, setUploadedImages] = useState<ImageView[]>([]);
   const mutedAuthors = useMutedAuthors();
+  // Hides a pin if either the person who pinned it OR the pinned
+  // message's own author is muted — found in review: this used to read
+  // straight from the unfiltered `pins`/`messageBySubject`, so a muted
+  // author's message still showed in full up here even though the same
+  // content was correctly hidden from the Messages tab below.
+  const visiblePins = useMemo(
+    () =>
+      pins.filter((pin) => {
+        if (mutedAuthors.has(pin.author_hex)) return false;
+        const message = messageBySubject.get(pin.subject);
+        return !message || !mutedAuthors.has(message.author_hex);
+      }),
+    [pins, messageBySubject, mutedAuthors],
+  );
   const allImages = useMemo(
     () => [...uploadedImages, ...images].filter((img) => !mutedAuthors.has(img.author_hex)),
     [uploadedImages, images, mutedAuthors],
@@ -115,9 +129,9 @@ export function TableDetail() {
       </div>
 
       {/* Pinned messages */}
-      {pins.length > 0 && (
+      {visiblePins.length > 0 && (
         <div style={{ padding: "0 var(--space-xl) var(--space-lg)", display: "flex", flexDirection: "column", gap: 8 }}>
-          {pins.map((pin) => {
+          {visiblePins.map((pin) => {
             const message = messageBySubject.get(pin.subject);
             const author = profileFor(members, pin.author_hex);
             return (

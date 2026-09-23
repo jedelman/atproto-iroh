@@ -4,9 +4,10 @@
 // Primary user action (§2): the top-of-screen strip answers "these are
 // your people, this is just us" before the feed itself.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Sticker } from "../components/Sticker";
+import { api } from "../api";
 import { useFeed, type FeedItem } from "../hooks/useFeed";
 import { useMutedAuthors } from "../hooks/useMutedAuthors";
 import { parseRecordRef } from "../lib/recordRef";
@@ -43,6 +44,24 @@ export function Feed() {
   const [filter, setFilter] = useState<FeedFilter>({ kind: "all" });
   const mutedAuthors = useMutedAuthors();
 
+  // Found in review: the header icon picked whichever author happened
+  // to be first in profilesByAuthor's insertion order (async fetch
+  // completion order across every Table) rather than the viewer's own
+  // profile — a user in several Tables would typically see a random
+  // other member's sticker as their own account icon. Resolved the
+  // same way Composer/DecisionsPanel/ProfileEdit already do.
+  const [selfAuthorHex, setSelfAuthorHex] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const did = await api.nodeDid();
+      if (!cancelled) setSelfAuthorHex(did?.replace(/^did:iroh:/, "") ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const visibleItems = useMemo(() => {
     const unmuted = items.filter((i) => !mutedAuthors.has(itemAuthorHex(i)));
     if (filter.kind === "all") return unmuted;
@@ -51,16 +70,23 @@ export function Feed() {
 
   // One pinned excerpt to feature — the most recently pinned message
   // across every Table, matching "excerpted in the Feed the first time
-  // a person sees a new Table's activity."
+  // a person sees a new Table's activity." Skips a pin if either the
+  // pinner or the pinned message's own author is muted — found in
+  // review: this used to read straight from the unfiltered
+  // pinsByTable/items, so a muted author's message could still be
+  // featured here even though it's correctly hidden from the feed list.
   const featuredPin = useMemo(() => {
     let best: { tableId: string; tag: (typeof pinsByTable)[string][number] } | null = null;
     for (const [tableId, tablePins] of Object.entries(pinsByTable)) {
       for (const tag of tablePins) {
+        if (mutedAuthors.has(tag.author_hex)) continue;
+        const message = items.find((i) => i.kind === "message" && i.message.subject === tag.subject);
+        if (message && message.kind === "message" && mutedAuthors.has(message.message.author_hex)) continue;
         if (!best || tag.rkey > best.tag.rkey) best = { tableId, tag };
       }
     }
     return best;
-  }, [pinsByTable]);
+  }, [pinsByTable, items, mutedAuthors]);
 
   if (loading) {
     return (
@@ -83,7 +109,7 @@ export function Feed() {
       >
         <div style={{ fontFamily: "var(--font-display)", fontSize: 19 }}>atproto-iroh</div>
         <Link to="/mute" aria-label="Muted authors">
-          <Sticker id={profilesByAuthor[Object.keys(profilesByAuthor)[0]]?.avatar} size={34} />
+          <Sticker id={selfAuthorHex ? profilesByAuthor[selfAuthorHex]?.avatar : undefined} size={34} />
         </Link>
       </div>
 

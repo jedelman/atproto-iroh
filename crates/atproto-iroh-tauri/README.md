@@ -45,10 +45,17 @@ per-Table (`mute::MuteList`'s own doc comment: local-only, no sync, no
 lexicon), a plain hex-id mute/unmute list against the three new
 `Client` methods (`muteAuthor`/`unmuteAuthor`/`listMuted`). A real
 `useMutedAuthors` hook (polls `listMuted()` on mount) filters muted
-authors' content out of both the Feed (messages/photos/decisions
-together, via a small `itemAuthorHex` switch over `FeedItem`'s three
-variants) and Table detail's Messages and Photos tabs. Doesn't yet
-reach the pinned-messages section above the tabs, or Decisions —
+authors' content out of the Feed (messages/photos/decisions together,
+via a small `itemAuthorHex` switch over `FeedItem`'s three variants)
+and Table detail's Messages and Photos tabs. **The pinned-messages
+section (both Feed's featured excerpt and Table detail's own pinned
+card) also filters now** — a code-review pass caught that it originally
+read straight from the unfiltered `pins`/`pinsByTable`, so a muted
+author's message still showed there in full even though the identical
+content was correctly hidden everywhere else; fixed by hiding a pin
+when *either* the person who pinned it *or* the pinned message's own
+author is muted, with a regression test for each case
+(`TableDetail.test.tsx`). Governance/Decisions still isn't filtered —
 a real, named gap, not silently dropped. Not just plumbed and left
 untested: `Feed.test.tsx` and `TableDetail.test.tsx` each got a real
 mute-then-assert-gone test, not just a "the command exists" check.
@@ -151,6 +158,47 @@ Five of the Table detail tabs are new since Composing shipped:
   every list-returning method now spreads into a fresh array
   (`[...(x[id] ?? [])]`) before returning it — `useTags.ts`'s own top
   comment carries the postmortem for whoever touches this file next.
+
+**Code-review pass (2026-09-23) — four more real bugs found and fixed**,
+on top of the ones each feature's own section above already documents:
+- **Onboarding's name/sticker never reached a Table.** `Join.tsx`'s
+  `doJoin()` called `joinNamespace` but never `updateProfile` — a new
+  member showed up as "Someone" with a default sticker in every Table
+  they joined until they separately visited Profile edit and re-entered
+  everything. Fixed: `doJoin` now also calls `updateProfile` with the
+  `useProfileDraft` pick right after a successful join (best-effort — a
+  failure there doesn't strand the person on an error screen for a join
+  that actually succeeded), with a regression test asserting the joined
+  Table's Members list shows the real name, not a placeholder.
+- **The camera never stopped when Join was navigated away from mid-scan.**
+  `useQrScanner` only released `getUserMedia`'s `MediaStream` on an
+  explicit `stop()` call, never on unmount — clicking a nav link while
+  `status === "scanning"` left the browser's camera indicator on
+  indefinitely. Fixed with a `useEffect` cleanup; `useQrScanner.test.tsx`
+  (new) mocks `getUserMedia` and asserts the track's `stop()` actually
+  fires on `unmount()`.
+- **The Feed header showed a random member's avatar, not the viewer's
+  own.** `profilesByAuthor[Object.keys(profilesByAuthor)[0]]` picked
+  whichever author happened to be first in a cross-Table map built by
+  `Promise.all` (async completion order, not self-identity) — someone
+  in several Tables would typically see someone else's sticker as their
+  own account icon. Fixed by resolving self via `nodeDid()`, the same
+  pattern Composer/DecisionsPanel/ProfileEdit already use; regression
+  test asserts the header's sticker is specifically the fixture self
+  author's real avatar.
+- **A checkbox in Profile edit that did nothing.** "I can weigh in on
+  this Table's decisions" wrote `NodeProfile.governance_eligible`, a
+  field no code path anywhere in core, the CLI, or the Tauri commands
+  reads to determine real eligibility — that's decided entirely by
+  synced `Founding`/`AdmitCoSigner` records via `fold::fold_namespace`
+  (`create_namespace_with_profile`'s own comment already says the
+  self-assertion heuristic this field once meant was replaced by that
+  real mechanism). Checking it silently had zero effect on whether
+  Support/Object actually appeared. Removed the checkbox rather than
+  wire it to something it was never connected to; the field itself is
+  still round-tripped on save (read, then written back unchanged) so a
+  profile edit can't accidentally erase a founder's existing
+  `Some(true)`.
 
 **Screenshot-verified, not just test-verified** — a real Playwright +
 headless-Chromium pipeline against `npm run dev`'s mock-backed browser

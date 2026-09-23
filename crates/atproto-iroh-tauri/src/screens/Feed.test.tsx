@@ -40,6 +40,21 @@ describe("Feed", () => {
     expect(screen.getByText("Move tool-shed hours to weekends")).toBeInTheDocument();
   });
 
+  it("shows the viewer's own avatar in the header, not an arbitrary member's", async () => {
+    // Found in review: the header icon used to pick whichever author
+    // happened to be first in profilesByAuthor's insertion order
+    // (async fetch completion order across every Table), not the
+    // viewer's own profile. SELF_AUTHOR_HEX's real avatar in
+    // fixtures.ts is "accent"; if this regresses, some other member's
+    // sticker (e.g. Marisol's "gold") would render instead.
+    renderFeed();
+    await waitFor(() => expect(screen.getAllByText("The Garden Table").length).toBeGreaterThan(0));
+
+    const headerLink = screen.getByLabelText("Muted authors");
+    const sticker = headerLink.querySelector('[aria-label^="Sticker:"]');
+    expect(sticker).toHaveAttribute("aria-label", "Sticker: accent");
+  });
+
   it("renders every table, the pinned excerpt, and a decision's status", async () => {
     renderFeed();
 

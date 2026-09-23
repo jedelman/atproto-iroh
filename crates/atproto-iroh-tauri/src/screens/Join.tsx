@@ -8,9 +8,11 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { api } from "../api";
 import { useQrScanner } from "../hooks/useQrScanner";
+import { useProfileDraft } from "../hooks/useProfileDraft";
 
 export function Join() {
   const navigate = useNavigate();
+  const { draft } = useProfileDraft();
   const [pastedTicket, setPastedTicket] = useState("");
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
@@ -20,6 +22,30 @@ export function Join() {
     setJoinError(null);
     try {
       const tableId = await api.joinNamespace(ticket);
+      // The Onboarding pick (name/sticker) never reaches a Table on its
+      // own — NodeProfile is per-Table, so joining is the first point
+      // one actually exists to write it to. Found in review: this call
+      // was missing entirely, leaving every new member as "Someone"
+      // with a default sticker until they separately visited Profile
+      // edit and re-entered everything from scratch. No "create a
+      // Table" screen exists in this frontend pass either, so Join is
+      // the only place this handoff can happen right now. A failure
+      // here shouldn't strand the person on an error screen for a join
+      // that actually succeeded — they can always fix their profile
+      // from the Table afterward — so it's a separate try/catch, not
+      // part of the join's own error path.
+      try {
+        await api.updateProfile(tableId, {
+          name: draft.name || "Someone new",
+          category: "individual",
+          avatar: draft.avatar,
+          neighborhood: null,
+          description: null,
+          governance_eligible: null,
+        });
+      } catch {
+        // Best-effort — the join itself is what matters here.
+      }
       navigate(`/table/${tableId}`);
     } catch (err) {
       setJoinError(err instanceof Error ? err.message : String(err));

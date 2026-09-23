@@ -31,6 +31,10 @@ export function ProfileEdit() {
   const [avatar, setAvatar] = useState<StickerId>("accent");
   const [neighborhood, setNeighborhood] = useState("");
   const [description, setDescription] = useState("");
+  // Not editable here — see the comment on the `save()` call below for
+  // why this form doesn't expose it, but a Save still shouldn't erase
+  // whatever value was already on the synced profile (e.g. a founder's
+  // `Some(true)` from create_namespace_with_profile).
   const [governanceEligible, setGovernanceEligible] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -69,6 +73,11 @@ export function ProfileEdit() {
         avatar,
         neighborhood: neighborhood.trim() || null,
         description: description.trim() || null,
+        // Round-tripped, not editable from this form — see the field's
+        // own comment above. Real decision eligibility comes only from
+        // a synced Founding claim or a ratified AdmitCoSigner proposal
+        // (fold::fold_namespace), which this field plays no part in
+        // despite the name; a checkbox here used to imply otherwise.
         governance_eligible: governanceEligible,
       };
       await api.updateProfile(tableId, profile);
@@ -137,15 +146,6 @@ export function ProfileEdit() {
         <Field label="About you (optional)">
           <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
         </Field>
-
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: "var(--text-2)" }}>
-          <input
-            type="checkbox"
-            checked={governanceEligible ?? false}
-            onChange={(e) => setGovernanceEligible(e.target.checked)}
-          />
-          I can weigh in on this Table's decisions
-        </label>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
           <button

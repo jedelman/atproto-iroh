@@ -92,15 +92,30 @@ describe("TableDetail", () => {
     renderTable(gardenTableId);
     await waitFor(() => expect(screen.getByText("The Garden Table")).toBeInTheDocument());
 
-    // Devon's tomato message should be gone from the Messages tab —
-    // still allowed to appear once, in the Pinned-messages section
-    // above the tabs, which doesn't filter by mute (a real, separate
-    // gap the README notes, not this test's concern).
+    // Devon's tomato message should be gone entirely — both from the
+    // Messages tab and from the Pinned-messages section above the tabs
+    // (Marisol pinned it; a code-review pass found the pinned section
+    // used to bypass the mute filter, showing a muted author's message
+    // in full even though the same content was correctly hidden below).
     expect(
       screen.queryAllByText("Tomatoes are going wild this week, come take some before the raccoons do."),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     // Marisol's welcome message, from a non-muted author, still shows.
     expect(screen.getByText(/Welcome! Water the beds/)).toBeInTheDocument();
+  });
+
+  it("also hides a pin when the pinner (not the message's author) is muted", async () => {
+    // Marisol pinned Devon's tomato message — muting Marisol should
+    // hide the pin even though Devon's own message stays visible in
+    // the Messages tab.
+    await api.muteAuthor(AUTHORS.marisol);
+    renderTable(gardenTableId);
+    await waitFor(() => expect(screen.getByText("The Garden Table")).toBeInTheDocument());
+
+    expect(screen.queryByText(/Pinned by Marisol/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Tomatoes are going wild this week, come take some before the raccoons do."),
+    ).toBeInTheDocument();
   });
 
   it("proposes a new decision, then objects to it and sees the status flip", async () => {
