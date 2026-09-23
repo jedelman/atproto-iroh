@@ -36,3 +36,6 @@ repository = "https://github.com/jedelman/atproto-iroh"
 # concrete fix, not just a nice-to-have.
 [profile.release]
 strip = true
+lto = true
+opt-level = "z"
+codegen-units = 1
