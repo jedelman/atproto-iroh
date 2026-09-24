@@ -34,15 +34,34 @@ export function Join() {
       // that actually succeeded — they can always fix their profile
       // from the Table afterward — so it's a separate try/catch, not
       // part of the join's own error path.
+      //
+      // Found in a follow-up review: Join is a persistent, always-
+      // reachable entry point (Feed's own "Join or start a table"
+      // link), and node.join()/joinNamespace is safely re-callable —
+      // so re-scanning or re-pasting a ticket for a Table you already
+      // belong to is a real path, not a hypothetical. The first version
+      // of this fix called updateProfile unconditionally with
+      // hardcoded onboarding defaults, which would silently overwrite
+      // an existing member's real name/avatar/neighborhood/description
+      // /governance_eligible back to those defaults — exactly the data
+      // -loss class ProfileEdit.tsx's own round-tripped-field comment
+      // exists to avoid. Only write the draft profile if this author
+      // has no profile in this Table yet.
       try {
-        await api.updateProfile(tableId, {
-          name: draft.name || "Someone new",
-          category: "individual",
-          avatar: draft.avatar,
-          neighborhood: null,
-          description: null,
-          governance_eligible: null,
-        });
+        const did = await api.nodeDid();
+        const selfAuthorHex = did?.replace(/^did:iroh:/, "") ?? "";
+        const existing = await api.listProfiles(tableId);
+        const alreadyHasProfile = existing.some((p) => p.author_hex === selfAuthorHex);
+        if (!alreadyHasProfile) {
+          await api.updateProfile(tableId, {
+            name: draft.name || "Someone new",
+            category: "individual",
+            avatar: draft.avatar,
+            neighborhood: null,
+            description: null,
+            governance_eligible: null,
+          });
+        }
       } catch {
         // Best-effort — the join itself is what matters here.
       }

@@ -42,4 +42,35 @@ describe("useQrScanner", () => {
     unmount();
     expect(stop).toHaveBeenCalledTimes(1);
   });
+
+  it("stops a camera stream that arrives after the component already unmounted", async () => {
+    // Found in a follow-up review pass: the fix above only stops a
+    // stream already assigned to streamRef — it didn't cover
+    // unmounting while still `status === "requesting"` (permission
+    // prompt still pending). This is that exact race: getUserMedia
+    // resolves *after* unmount's cleanup already ran once.
+    const stop = vi.fn();
+    const fakeStream = { getTracks: () => [{ stop }] } as unknown as MediaStream;
+    let resolveGetUserMedia!: (stream: MediaStream) => void;
+    const pending = new Promise<MediaStream>((resolve) => {
+      resolveGetUserMedia = resolve;
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockReturnValue(pending) },
+      configurable: true,
+    });
+
+    let start: (() => void) | undefined;
+    const { unmount } = render(<Probe onReady={(s) => (start = s)} />);
+
+    const startPromise = start!(); // still awaiting getUserMedia — status is "requesting"
+    unmount(); // navigate away before the permission prompt is answered
+
+    await act(async () => {
+      resolveGetUserMedia(fakeStream); // permission granted only after the component is gone
+      await startPromise;
+    });
+
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
 });

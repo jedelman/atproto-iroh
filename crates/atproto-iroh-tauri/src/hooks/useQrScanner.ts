@@ -60,6 +60,16 @@ export function useQrScanner(onDecode: (text: string) => void) {
     requestAnimationFrame(tick);
   }, [onDecode, stop]);
 
+  // Found in review, second pass: the first unmount fix below only
+  // stops a stream already assigned to streamRef — it doesn't cover
+  // unmounting while status is still "requesting" (the OS/browser
+  // permission prompt hasn't been answered yet). getUserMedia() can
+  // resolve *after* that unmount already ran its cleanup once, and
+  // nothing was left to catch a stream that shows up late — the camera
+  // would turn on with no mounted component left to ever stop it.
+  // mountedRef makes start()'s own continuation the thing that checks.
+  const mountedRef = useRef(true);
+
   const start = useCallback(async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
       setStatus("error");
@@ -70,6 +80,14 @@ export function useQrScanner(onDecode: (text: string) => void) {
     setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      if (!mountedRef.current) {
+        // The component was unmounted while the permission prompt was
+        // still pending — there's no video element or scan loop left
+        // to hand this to, so shut it straight down instead of turning
+        // the camera on for nobody.
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -79,6 +97,7 @@ export function useQrScanner(onDecode: (text: string) => void) {
       setStatus("scanning");
       requestAnimationFrame(tick);
     } catch (err) {
+      if (!mountedRef.current) return;
       setStatus("error");
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -95,7 +114,11 @@ export function useQrScanner(onDecode: (text: string) => void) {
   const stopRef = useRef(stop);
   stopRef.current = stop;
   useEffect(() => {
-    return () => stopRef.current();
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      stopRef.current();
+    };
   }, []);
 
   return { status, error, videoRef, start, stop };

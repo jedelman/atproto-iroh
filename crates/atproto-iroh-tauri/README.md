@@ -159,8 +159,10 @@ Five of the Table detail tabs are new since Composing shipped:
   (`[...(x[id] ?? [])]`) before returning it — `useTags.ts`'s own top
   comment carries the postmortem for whoever touches this file next.
 
-**Code-review pass (2026-09-23) — four more real bugs found and fixed**,
-on top of the ones each feature's own section above already documents:
+**Code-review passes (2026-09-23/24) — four more real bugs found and
+fixed, plus two follow-up corrections found reviewing those same
+fixes**, on top of the ones each feature's own section above already
+documents:
 - **Onboarding's name/sticker never reached a Table.** `Join.tsx`'s
   `doJoin()` called `joinNamespace` but never `updateProfile` — a new
   member showed up as "Someone" with a default sticker in every Table
@@ -169,14 +171,37 @@ on top of the ones each feature's own section above already documents:
   `useProfileDraft` pick right after a successful join (best-effort — a
   failure there doesn't strand the person on an error screen for a join
   that actually succeeded), with a regression test asserting the joined
-  Table's Members list shows the real name, not a placeholder.
+  Table's Members list shows the real name, not a placeholder. **A
+  follow-up review pass caught the first version of this fix writing
+  those onboarding defaults unconditionally** — Join is a persistent,
+  always-reachable entry point (Feed's "Join or start a table" link),
+  and re-scanning/re-pasting a ticket for a Table already belonged to
+  is a real path, not hypothetical, since `joinNamespace` is safely
+  re-callable; the unconditional write would silently clobber an
+  existing member's real name/avatar/neighborhood/description/
+  `governance_eligible` back to onboarding defaults on every re-join —
+  the exact class of data loss the `governance_eligible` round-trip fix
+  below exists to prevent. Fixed by checking `listProfiles` for an
+  existing self entry first and only writing the draft if none exists;
+  a second regression test re-joins an already-profiled Table with a
+  different draft name and asserts the original name survives.
 - **The camera never stopped when Join was navigated away from mid-scan.**
   `useQrScanner` only released `getUserMedia`'s `MediaStream` on an
   explicit `stop()` call, never on unmount — clicking a nav link while
   `status === "scanning"` left the browser's camera indicator on
   indefinitely. Fixed with a `useEffect` cleanup; `useQrScanner.test.tsx`
   (new) mocks `getUserMedia` and asserts the track's `stop()` actually
-  fires on `unmount()`.
+  fires on `unmount()`. **A follow-up review pass caught a narrower race
+  in that same fix**: unmounting while `status === "requesting"` (the
+  permission prompt still pending) meant `streamRef` was still empty
+  when the cleanup ran, so a stream that showed up *after* unmount —
+  because the person granted camera access only after navigating
+  away — had nothing left to stop it. Fixed with a `mountedRef` that
+  `start()`'s own `await getUserMedia(...)` continuation checks before
+  ever assigning the stream, shutting it down immediately instead of
+  turning the camera on for an unmounted component; a second
+  regression test resolves a pending `getUserMedia` promise only after
+  `unmount()` and asserts the late stream still gets stopped.
 - **The Feed header showed a random member's avatar, not the viewer's
   own.** `profilesByAuthor[Object.keys(profilesByAuthor)[0]]` picked
   whichever author happened to be first in a cross-Table map built by
