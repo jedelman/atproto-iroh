@@ -349,6 +349,47 @@ sink options (or both) Jason wants wired up first. This section records
 the direction and the reasoning, not a commitment to build it this
 session.
 
+**Superseded (2026-09-24): telemetry is a local ring buffer, not a
+synced record type.** Jason's call, in the same conversation that
+resolved the offline-detection design below: a bounded in-memory diary
+of connectivity/sync events, exportable to a file on request, not
+another namespace to sync. Simpler, and it turns out to share its event
+source with the offline-detection work below rather than needing its
+own — see that section for the concrete plumbing. The synced-record-
+type design above stays on record rather than deleted (this doc's own
+practice), but it's not the plan going forward.
+
+**Offline/no-peers-reachable — resolved (2026-09-24), the frontend gap
+this session's design-interview check flagged as "invisible."** First
+pass at this claimed no primitive existed (`Endpoint::remote_info`
+needs a peer id you already have) — wrong, or at least incomplete:
+checking `iroh-docs`' own event stream turned up the right layer, which
+is per-Table, not per-arbitrary-peer anyway. Two real signals, both
+confirmed directly in the vendored crate source, not assumed from
+memory:
+- **Per-Table peer presence**: `docs.subscribe(namespace)` yields
+  `LiveEvent::NeighborUp(PublicKey)`/`NeighborDown(PublicKey)` as peers
+  join/leave that Table's sync swarm, plus `SyncFinished(SyncEvent)` on
+  a completed reconciliation. A `HashSet<PublicKey>` per namespace,
+  maintained by draining this stream, is an honest "how many other
+  devices can I sync this Table with right now" count.
+- **Global reachability**: `Endpoint::home_relay_status()` (a
+  `Watcher<Value = Vec<RelayStatus>>`, each entry's `is_connected()`)
+  and the `online()` convenience future built on it — "can I reach the
+  outside network at all," independent of any one Table.
+
+**The design, not yet built**: a `connectivity` module in
+`atproto-iroh-core`, one background task per spawned `Node` draining
+both event sources — per-namespace neighbor counts from the first,
+relay-connectedness from the second — feeding two things at once: (1) a
+queryable `connectivity_state(namespace_id) -> { peer_count,
+relay_connected }` for the frontend's offline banner, and (2) the
+telemetry ring buffer above (the same transitions are exactly what's
+worth logging for diagnostics — this is the shared plumbing referenced
+there). Tauri command + frontend hook follow once the core piece
+exists. Not built this session — recorded here so the next session
+doesn't re-derive it or repeat the "no primitive exists" mistake.
+
 ## Federation model, platform priority, and background execution
 
 Jason's framing (2026-09-22): this is for **tight autonomous orgs to
@@ -381,6 +422,22 @@ product (no custom OS image, no screen/GPIO integration, no case) — the
 software side (a CLI that can `serve` indefinitely, real persistence, a
 real join flow) already exists and is what such a box would run
 unmodified.
+
+**Sold hardware deferred to V2/V3 (2026-09-24); V1 is a containerized
+relay, deploy-it-yourself.** Jason's call: skip the physical-device
+product for now and ship a Nix flake producing an OCI image for
+`atproto-iroh-cli`'s `serve --share` mode — `nix build .#relay-container`
+(exact attribute name TBD), runnable on Docker/Podman/a NixOS host via
+the same derivation, no screen/GPIO/case work implied. A NixOS module
+(a systemd unit wrapping `serve`) is close to free once the package
+derivation exists and is worth adding alongside the container image,
+but the container is the actual V1 deliverable. Everything above this
+paragraph (relay mode needing no authoring identity, the control
+endpoint's join/reset, publication-as-provisioning) is unchanged by
+this — it's still the same `serve` binary, just packaged for
+self-deploy instead of sold pre-loaded. Not built yet this session;
+recorded here so the direction doesn't get re-litigated as "Pi vs.
+container" next time — it's "container now, Pi (or similar) later."
 
 **Relay mode — built (2026-09-22): the box doesn't need an authoring
 identity, only a network one.** Raised in conversation as a feasibility
