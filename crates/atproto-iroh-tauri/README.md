@@ -337,17 +337,37 @@ members (`mockClient.ts` was seeding all tables from the same full
 profile set). All three fixed, and turned into real test assertions
 afterward so they'd be caught by the suite next time, not just eyeballs.
 
-**Not yet ported — a real, current gap, not an oversight**: the old
-plain-JS app had working UI for every one of its 28 commands (Messaging
-thread view *outside* a Table's own tab — reply-to isn't wired into the
-Composer yet, the full Governance UI beyond General-class
-decisions — no admit/remove-cosigner or policy-change proposal forms,
-Tagging on Images/Shared docs (Messages only, above), QR *generation*
-(`ticket_to_qr` — scanning is built, Join screen above), the raw
-inspector, relay/control). Functionally, this rebuild still covers
-*less* than the app it replaced; a deliberate trade (a real design
-direction on seven screens, over a complete-but-undesigned UI on
-eight) that needs the remaining screens built to reach parity.
+**Reply-to threading — built (2026-09-24).** The backend was already
+fully ready (`messaging::reply_ref`, the Tauri `send_message` command's
+`reply_to_author_hex`/`reply_to_rkey` params, `MessageView.reply_to` —
+all wired since before this frontend rebuild started); the gap was
+entirely frontend. `Client.sendMessage` gained an optional `replyTo`
+param (threaded through `tauriClient`/`mockClient`); `TableDetail.tsx`
+gained a "Reply" action per message (alongside Pin/+Tag), a lifted
+`replyTarget` state showing a "Replying to X: '…'" chip above the
+Composer with a cancel button, and a "↳ Replying to X: '…'" indicator
+on any message that has a `reply_to`, resolved via a new
+`messageByReplyRef` map — deliberately separate from the existing
+`messageBySubject` map, since `reply_to` uses `messaging::reply_ref`'s
+`"{author_hex}/{rkey}"` convention, not `record_ref`'s tagging-oriented
+`"{author_hex}/{collection}/{rkey}"` one; reusing the wrong map would
+have silently never matched. `TableDetail.test.tsx`'s new test exercises
+the whole path against the mock backend (click Reply, compose, send,
+confirm both the composer's chip clears and the new message shows its
+own reply-to indicator), scoped to Weekend Hikers rather than Garden to
+avoid leaking a second fixture-text match into a later test via
+mockClient's shared module-level state (the same hazard a code-review
+pass already flagged once for `Join.test.tsx`). Still not built: a
+dedicated thread view reachable *outside* a Table's own Messages tab —
+this closes reply-to itself, not a separate threaded-conversation
+screen, which was never clearly asked for and is a real IA decision on
+its own.
+
+**Not yet ported — real, current gaps, not oversights**: the full
+Governance UI beyond General-class decisions (no admit/remove-cosigner
+or policy-change proposal forms), Tagging on Images/Shared docs
+(Messages only, above), QR *generation* (`ticket_to_qr` — scanning is
+built, Join screen above), the raw inspector, relay/control.
 
 **Design-interview edge cases fleshed out (2026-09-24)**, following a
 gap check against `.impeccable.md`/`DESIGN_BRIEF.md` after the

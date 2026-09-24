@@ -45,6 +45,18 @@ export function TableDetail() {
     return map;
   }, [allMessages]);
 
+  // Keyed by messaging::reply_ref's "{author_hex}/{rkey}" convention —
+  // deliberately a separate map from messageBySubject above, since
+  // Message.reply_to isn't a record_ref (no collection segment) the way
+  // a tag's subject is; reusing messageBySubject here would silently
+  // never match.
+  const messageByReplyRef = useMemo(() => {
+    const map = new Map<string, MessageView>();
+    for (const m of allMessages) map.set(`${m.author_hex}/${m.rkey}`, m);
+    return map;
+  }, [allMessages]);
+  const [replyTarget, setReplyTarget] = useState<MessageView | null>(null);
+
   const [uploadedImages, setUploadedImages] = useState<ImageView[]>([]);
   const mutedAuthors = useMutedAuthors();
   // Hides a pin if either the person who pinned it OR the pinned
@@ -195,6 +207,9 @@ export function TableDetail() {
             <Composer
               tableId={id ?? ""}
               onSent={(m) => setSentMessages((prev) => [m, ...prev])}
+              replyTarget={replyTarget}
+              replyTargetAuthor={replyTarget ? profileFor(members, replyTarget.author_hex)?.name ?? "Someone" : null}
+              onClearReply={() => setReplyTarget(null)}
             />
             {userLabels.length > 0 && (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -230,20 +245,36 @@ export function TableDetail() {
                 // message right after joining (before ever publishing
                 // a profile there) genuinely has no name to show yet.
                 const author = profileFor(members, m.author_hex);
+                const repliedTo = m.reply_to ? messageByReplyRef.get(m.reply_to) : undefined;
+                const repliedToAuthor = repliedTo ? profileFor(members, repliedTo.author_hex)?.name ?? "Someone" : null;
                 return (
                   <div key={m.rkey} style={{ ...cardStyle, padding: 14 }}>
+                    {m.reply_to && (
+                      <p style={{ margin: "0 0 6px", fontSize: 12, color: "var(--text-3)", borderRadius: 8, background: "var(--surface-2)", padding: "5px 8px" }}>
+                        ↳ Replying to {repliedToAuthor ?? "someone"}
+                        {repliedTo ? `: "${truncate(repliedTo.text, 60)}"` : " (that message hasn't synced yet)"}
+                      </p>
+                    )}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                       <Sticker id={author?.avatar} size={24} />
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{author?.name ?? "Someone"}</span>
                     </div>
                     <p style={{ margin: "0 0 8px", fontSize: 14, color: "var(--text)", lineHeight: 1.55 }}>{m.text}</p>
-                    <MessageTags
-                      tableId={id ?? ""}
-                      subject={m.subject}
-                      tags={tagsBySubject.get(m.subject) ?? []}
-                      onTagged={refreshTags}
-                      onPinned={refreshPins}
-                    />
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <MessageTags
+                        tableId={id ?? ""}
+                        subject={m.subject}
+                        tags={tagsBySubject.get(m.subject) ?? []}
+                        onTagged={refreshTags}
+                        onPinned={refreshPins}
+                      />
+                      <button
+                        onClick={() => setReplyTarget(m)}
+                        style={{ background: "none", border: "none", color: "var(--text-3)", fontSize: 11.5, padding: "2px 4px" }}
+                      >
+                        Reply
+                      </button>
+                    </div>
                   </div>
                 );
               })
@@ -413,7 +444,19 @@ function MessageTags({
   );
 }
 
-function Composer({ tableId, onSent }: { tableId: string; onSent: (m: MessageView) => void }) {
+function Composer({
+  tableId,
+  onSent,
+  replyTarget,
+  replyTargetAuthor,
+  onClearReply,
+}: {
+  tableId: string;
+  onSent: (m: MessageView) => void;
+  replyTarget: MessageView | null;
+  replyTargetAuthor: string | null;
+  onClearReply: () => void;
+}) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -427,23 +470,40 @@ function Composer({ tableId, onSent }: { tableId: string; onSent: (m: MessageVie
       // synced-back entry will, not a placeholder that would only
       // coincidentally look right.
       const selfAuthorHex = (await resolveSelfAuthorHex(api)) ?? "";
-      const rkey = await api.sendMessage(tableId, trimmed);
+      const replyTo = replyTarget ? { authorHex: replyTarget.author_hex, rkey: replyTarget.rkey } : undefined;
+      const rkey = await api.sendMessage(tableId, trimmed, replyTo);
       onSent({
         author_hex: selfAuthorHex,
         rkey,
         subject: `${selfAuthorHex}/network.essmesh.chat.message/${rkey}`,
         text: trimmed,
-        reply_to: null,
+        reply_to: replyTo ? `${replyTo.authorHex}/${replyTo.rkey}` : null,
         created_at: new Date().toISOString(),
       });
       setText("");
+      onClearReply();
     } finally {
       setSending(false);
     }
   }
 
   return (
-    <div style={{ display: "flex", gap: 8 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {replyTarget && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface-2)", borderRadius: 10, padding: "6px 10px" }}>
+          <p style={{ margin: 0, flexGrow: 1, fontSize: 12, color: "var(--text-3)" }}>
+            Replying to {replyTargetAuthor ?? "someone"}: "{truncate(replyTarget.text, 50)}"
+          </p>
+          <button
+            onClick={onClearReply}
+            aria-label="Cancel reply"
+            style={{ background: "none", border: "none", color: "var(--text-3)", fontSize: 13, padding: "0 4px" }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8 }}>
       <input
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -477,6 +537,7 @@ function Composer({ tableId, onSent }: { tableId: string; onSent: (m: MessageVie
       >
         Send
       </button>
+      </div>
     </div>
   );
 }
@@ -942,5 +1003,9 @@ function SharedDoc({ tableId, members }: { tableId: string; members: ProfileView
 
 function EmptyTab({ text }: { text: string }) {
   return <p style={{ color: "var(--text-3)", fontSize: 13.5, textAlign: "center", padding: "var(--space-2xl) 0" }}>{text}</p>;
+}
+
+function truncate(text: string, maxLength: number): string {
+  return text.length > maxLength ? `${text.slice(0, maxLength).trimEnd()}…` : text;
 }
 

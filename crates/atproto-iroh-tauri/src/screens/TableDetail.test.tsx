@@ -71,6 +71,36 @@ describe("TableDetail", () => {
     );
   });
 
+  it("replies to a message and shows the reply-to indicator", async () => {
+    // Weekend Hikers, not Garden — mockClient's message list is
+    // module-level state that persists across tests in this file (same
+    // hazard the pin test above already works around), and this test's
+    // own reply text would otherwise leak a second, ambiguous match of
+    // Garden's fixture text into a later test's assertions.
+    const hikersTableId = TABLES[1].id;
+    renderTable(hikersTableId);
+    await waitFor(() => expect(screen.getByText("Weekend Hikers")).toBeInTheDocument());
+
+    const overlookText = "Made it to the overlook before the fog rolled in. Worth the 6am start.";
+    const card = screen.getByText(overlookText).closest("div")!;
+    await userEvent.click(within(card).getByText("Reply"));
+
+    expect(screen.getByText(/Replying to Sequoia/)).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("Say something…"), "Got it, thanks!");
+    await userEvent.click(screen.getByText("Send"));
+
+    // The reply composer's own "Replying to" chip clears after a
+    // successful send — checked via its cancel button rather than the
+    // text alone, since the new message's own reply-to indicator
+    // legitimately keeps showing "Replying to Sequoia" elsewhere on the
+    // page.
+    expect(screen.queryByLabelText("Cancel reply")).not.toBeInTheDocument();
+
+    const newCard = (await screen.findByText("Got it, thanks!")).closest("div")!;
+    expect(newCard).toHaveTextContent(/Replying to Sequoia.*Made it to the overlook/);
+  });
+
   it("switches to the Decisions tab and shows a real decision", async () => {
     renderTable(gardenTableId);
     await waitFor(() => expect(screen.getByText("The Garden Table")).toBeInTheDocument());

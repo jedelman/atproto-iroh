@@ -51,9 +51,15 @@ export interface Client {
   ): Promise<void>;
   listProfiles(namespaceId: string): Promise<ProfileView[]>;
   listMessages(namespaceId: string): Promise<MessageView[]>;
-  /** Posts a message; no reply-to yet (threading isn't built in this
-   * frontend pass — real gap, not silently dropped, see README). */
-  sendMessage(namespaceId: string, text: string): Promise<string>;
+  /** Posts a message — `replyTo` is optional and, when given, becomes
+   * `Message.reply_to` (`messaging::reply_ref`'s
+   * `"{author_hex}/{rkey}"` convention, distinct from `record_ref`'s
+   * tagging-oriented `"{author_hex}/{collection}/{rkey}"`). */
+  sendMessage(
+    namespaceId: string,
+    text: string,
+    replyTo?: { authorHex: string; rkey: string },
+  ): Promise<string>;
   listImages(namespaceId: string): Promise<ImageView[]>;
   /** Uploads an image — bytes cross the Tauri IPC boundary as a plain
    * number array (no separate binary-transfer path in this reference

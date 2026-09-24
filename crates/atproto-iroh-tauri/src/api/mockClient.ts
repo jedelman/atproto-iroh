@@ -135,7 +135,7 @@ export const mockClient: Client = {
     return [...(messages[namespaceId] ?? [])];
   },
 
-  async sendMessage(namespaceId, text) {
+  async sendMessage(namespaceId, text, replyTo) {
     const rkey = mockRkey();
     const subject = `${SELF_AUTHOR_HEX}/network.essmesh.chat.message/${rkey}`;
     messages[namespaceId] ??= [];
@@ -144,7 +144,7 @@ export const mockClient: Client = {
       rkey,
       subject,
       text,
-      reply_to: null,
+      reply_to: replyTo ? `${replyTo.authorHex}/${replyTo.rkey}` : null,
       created_at: new Date().toISOString(),
     });
     return rkey;

@@ -51,12 +51,12 @@ export const tauriClient: Client = {
     invoke<ProfileView[]>("list_profiles", { namespaceId }),
   listMessages: (namespaceId) =>
     invoke<MessageView[]>("list_messages", { namespaceId }),
-  sendMessage: (namespaceId, text) =>
+  sendMessage: (namespaceId, text, replyTo) =>
     invoke<string>("send_message", {
       namespaceId,
       text,
-      replyToAuthorHex: null,
-      replyToRkey: null,
+      replyToAuthorHex: replyTo?.authorHex ?? null,
+      replyToRkey: replyTo?.rkey ?? null,
     }),
   listImages: (namespaceId) => invoke<ImageView[]>("list_images", { namespaceId }),
   uploadImage: (namespaceId, bytes, contentType, caption) =>
