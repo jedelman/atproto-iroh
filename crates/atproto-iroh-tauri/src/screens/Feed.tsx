@@ -14,6 +14,7 @@ import { useSelfAuthorHex } from "../hooks/useSelfAuthorHex";
 import { parseRecordRef } from "../lib/recordRef";
 import { isPinVisible } from "../lib/mutedPins";
 import { findMessageBySubject } from "../lib/feedMessages";
+import { cardStyle } from "../lib/cardStyle";
 
 function itemAuthorHex(item: FeedItem): string {
   switch (item.kind) {
@@ -172,14 +173,7 @@ export function Feed() {
           {/* Pinned excerpt */}
           {featuredPin && (
             <div style={{ padding: "0 var(--space-xl) var(--space-lg)" }}>
-              <div
-                style={{
-                  background: "var(--surface)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 16,
-                  padding: "14px 16px",
-                }}
-              >
+              <div style={{ ...cardStyle, padding: "14px 16px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                   <PinIcon />
                   <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>
@@ -298,18 +292,13 @@ function FeedItemCard({
   tableName: string;
   profile: { name: string; avatar?: string | null } | undefined;
 }) {
-  const cardStyle: React.CSSProperties = {
-    background: "var(--surface)",
-    border: "1px solid var(--border)",
-    borderRadius: 16,
-    overflow: "hidden",
-  };
+  const itemCardStyle: React.CSSProperties = { ...cardStyle, overflow: "hidden" };
 
   if (item.kind === "decision") {
     const { proposal, status } = item.proposal;
     const isOpen = status.state === "open";
     return (
-      <div style={{ ...cardStyle, padding: 16 }}>
+      <div style={{ ...itemCardStyle, padding: 16 }}>
         <TypeHeader icon={<DecisionIcon />} label={`Decision · ${tableName}`} color="var(--sage)" time={timeAgo(item.createdAt)} />
         <p style={{ margin: "10px 0", fontSize: 15, fontWeight: 600 }}>{proposal.title}</p>
         {proposal.description && (
@@ -335,7 +324,7 @@ function FeedItemCard({
 
   if (item.kind === "photo") {
     return (
-      <div style={cardStyle}>
+      <div style={itemCardStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px 10px" }}>
           <Sticker id={profile?.avatar} size={28} />
           <div style={{ flexGrow: 1, fontSize: 13.5, fontWeight: 600 }}>
@@ -354,7 +343,7 @@ function FeedItemCard({
   // message
   const { message } = item;
   return (
-    <div style={{ ...cardStyle, padding: 16 }}>
+    <div style={{ ...itemCardStyle, padding: 16 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <Sticker id={profile?.avatar} size={28} />
         <div style={{ flexGrow: 1, fontSize: 13.5, fontWeight: 600 }}>

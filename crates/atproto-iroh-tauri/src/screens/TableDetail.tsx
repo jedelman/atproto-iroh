@@ -16,6 +16,7 @@ import { useSelfAuthorHex } from "../hooks/useSelfAuthorHex";
 import { hasPossibleConflict } from "../lib/docConflict";
 import { resolveSelfAuthorHex } from "../lib/identity";
 import { isPinVisible } from "../lib/mutedPins";
+import { cardStyle, rowCardStyle } from "../lib/cardStyle";
 import { api, type ImageView, type MessageView, type ProfileView, type ProposalView, type TagView } from "../api";
 
 type Tab = "messages" | "decisions" | "photos" | "docs";
@@ -139,7 +140,7 @@ export function TableDetail() {
             return (
               <div
                 key={pin.rkey}
-                style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: "12px 16px" }}
+                style={{ ...cardStyle, padding: "12px 16px" }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                   <PinIcon size={11} />
@@ -214,7 +215,7 @@ export function TableDetail() {
                 // a profile there) genuinely has no name to show yet.
                 const author = profileFor(members, m.author_hex);
                 return (
-                  <div key={m.rkey} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 14 }}>
+                  <div key={m.rkey} style={{ ...cardStyle, padding: 14 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                       <Sticker id={author?.avatar} size={24} />
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{author?.name ?? "Someone"}</span>
@@ -485,7 +486,7 @@ function PhotosPanel({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ ...cardStyle, padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <input
           value={caption}
           onChange={(e) => setCaption(e.target.value)}
@@ -638,7 +639,7 @@ function DecisionsPanel({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 14 }}>
+      <div style={{ ...cardStyle, padding: 14 }}>
         <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: 0.4 }}>
           New decision
         </p>
@@ -701,7 +702,7 @@ function DecisionsPanel({
         <EmptyTab text="No decisions yet." />
       ) : (
         proposals.map((p) => (
-          <div key={p.rkey} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 14 }}>
+          <div key={p.rkey} style={{ ...cardStyle, padding: 14 }}>
             <p style={{ margin: "0 0 6px", fontSize: 14.5, fontWeight: 600 }}>{p.proposal.title}</p>
             {p.proposal.description && (
               <p style={{ margin: 0, fontSize: 13, color: "var(--text-2)" }}>{p.proposal.description}</p>
@@ -834,7 +835,7 @@ function SharedDoc({ tableId, members }: { tableId: string; members: ProfileView
       {conflict && (
         <div
           role="alert"
-          style={{ background: "var(--surface)", border: "1px solid var(--rose)", borderRadius: 12, padding: "10px 14px" }}
+          style={{ ...rowCardStyle, border: "1px solid var(--rose)", padding: "10px 14px" }}
         >
           <p style={{ margin: 0, fontSize: 13, color: "var(--rose)", fontWeight: 600 }}>
             ⚠ possible conflict
@@ -859,7 +860,7 @@ function SharedDoc({ tableId, members }: { tableId: string; members: ProfileView
             return (
               <div
                 key={rev.rev}
-                style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 14px", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}
+                style={{ ...rowCardStyle, padding: "10px 14px", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}
               >
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>

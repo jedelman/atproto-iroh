@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { rowCardStyle } from "../lib/cardStyle";
 
 export function Mute() {
   const [loading, setLoading] = useState(true);
@@ -110,7 +111,7 @@ export function Mute() {
           muted.map((hex) => (
             <div
               key={hex}
-              style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}
+              style={{ ...rowCardStyle, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}
             >
               <span style={{ fontSize: 12.5, fontFamily: "monospace", color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {hex}

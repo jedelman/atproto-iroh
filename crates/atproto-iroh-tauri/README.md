@@ -293,11 +293,30 @@ none of it a correctness bug:
   ProfileEdit**, differing only in size/gap — extracted to
   `components/StickerPicker.tsx`.
 
+A shared `lib/cardStyle.ts` (`cardStyle`, radius 16; `rowCardStyle`,
+radius 12) followed the same day, once actually built and
+screenshot-verified rather than skipped as originally noted below: a
+dozen-plus call sites across Feed/TableDetail/Mute had each written the
+same `background: var(--surface); border: 1px solid var(--border);
+border-radius: …` inline. Call sites spread the shared object in and
+override padding/border-color locally (the rose-bordered conflict alert
+in TableDetail's doc panel is `{...rowCardStyle, border: "1px solid
+var(--rose)"}`). **Caught a real bug introduced by this refactor before
+it shipped, not a pre-existing one**: Feed.tsx's `FeedItemCard` had its
+own locally-scoped `cardStyle` const (with `overflow: "hidden"`, needed
+to clip the photo item's image to the rounded corners) that shadowed
+the newly-imported shared one — the first pass left two of its three
+`return` branches (photo and message) pointing at the *shared* import
+instead of the local `overflow: hidden` variant, which would have
+un-clipped those cards' corners. Renamed the local variant to
+`itemCardStyle` and fixed both call sites; caught by re-screenshotting
+every card variant (pinned message, feed item cards, decisions panel,
+muted-author row, doc conflict alert) after the change, not just by the
+type-checker, since a shadowed-import bug like this type-checks fine.
+
 Skipped, with reasoning rather than silently dropped: a generic
 `useAsyncEffect` to unify the several remaining cancelled-flag fetch
-effects elsewhere (judged too invasive to apply blindly); a shared
-`cardStyle` object for the many inline card styles (cosmetic-risk, out
-of scope for a non-visual pass); a shared cache between `useFeed` and
+effects elsewhere (judged too invasive to apply blindly); a shared cache between `useFeed` and
 `useTable` to avoid re-fetching on Feed→Table navigation (real
 architectural change, not a local fix); generalizing `mockClient.ts`'s
 `signalDecision` beyond its current block-only special case (no UI
