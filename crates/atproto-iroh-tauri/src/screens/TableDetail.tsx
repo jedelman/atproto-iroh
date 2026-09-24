@@ -273,7 +273,7 @@ export function TableDetail() {
                     </div>
                     <p style={{ margin: "0 0 8px", fontSize: 14, color: "var(--text)", lineHeight: 1.55 }}>{m.text}</p>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                      <MessageTags
+                      <TagList
                         tableId={id ?? ""}
                         subject={m.subject}
                         tags={tagsBySubject.get(m.subject) ?? []}
@@ -308,11 +308,20 @@ export function TableDetail() {
           <PhotosPanel
             tableId={id ?? ""}
             images={allImages}
+            tagsBySubject={tagsBySubject}
             onUploaded={(img) => setUploadedImages((prev) => [img, ...prev])}
+            onTagged={refreshTags}
           />
         )}
 
-        {tab === "docs" && <SharedDoc tableId={id ?? ""} members={members} />}
+        {tab === "docs" && (
+          <SharedDoc
+            tableId={id ?? ""}
+            members={members}
+            tagsBySubject={tagsBySubject}
+            onTagged={refreshTags}
+          />
+        )}
       </div>
     </div>
   );
@@ -357,7 +366,7 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
   );
 }
 
-function MessageTags({
+function TagList({
   tableId,
   subject,
   tags,
@@ -371,9 +380,14 @@ function MessageTags({
   // Pinning is itself just a tag (tagging.rs's PIN_LABEL — SPEC.md's
   // "tags are monads" note) but a separate callback from onTagged: a
   // pin also has to refresh useTable's own `pins` state (the top-of-
-  // screen strip), not just the per-message tag list this component
-  // already re-fetches via onTagged.
-  onPinned: () => void;
+  // screen strip), not just the per-subject tag list this component
+  // already re-fetches via onTagged. Optional — DESIGN_BRIEF.md's
+  // pinning is specifically "pinned messages," not photos or docs, so
+  // Photos/SharedDoc render this component without a Pin button at
+  // all (tagging.rs's own tagging is cross-lexicon by construction —
+  // CLAUDE.md's batteries-included list — so reusing this for every
+  // taggable subject, not just messages, needed no backend change).
+  onPinned?: () => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [label, setLabel] = useState("");
@@ -395,7 +409,7 @@ function MessageTags({
   }
 
   async function pin() {
-    if (pinning) return;
+    if (pinning || !onPinned) return;
     setPinning(true);
     try {
       await api.addTag(tableId, subject, PIN_LABEL);
@@ -415,14 +429,16 @@ function MessageTags({
           {`#${t.label}`}
         </span>
       ))}
-      <button
-        onClick={pin}
-        disabled={pinning}
-        aria-label="Pin this message"
-        style={{ background: "none", border: "none", color: "var(--text-3)", fontSize: 11.5, padding: "2px 4px", display: "inline-flex", alignItems: "center", gap: 3, opacity: pinning ? 0.5 : 1 }}
-      >
-        <PinIcon size={10} /> Pin
-      </button>
+      {onPinned && (
+        <button
+          onClick={pin}
+          disabled={pinning}
+          aria-label="Pin this message"
+          style={{ background: "none", border: "none", color: "var(--text-3)", fontSize: 11.5, padding: "2px 4px", display: "inline-flex", alignItems: "center", gap: 3, opacity: pinning ? 0.5 : 1 }}
+        >
+          <PinIcon size={10} /> Pin
+        </button>
+      )}
       {adding ? (
         <span style={{ display: "inline-flex", gap: 4 }}>
           <input
@@ -558,11 +574,15 @@ function Composer({
 function PhotosPanel({
   tableId,
   images,
+  tagsBySubject,
   onUploaded,
+  onTagged,
 }: {
   tableId: string;
   images: ImageView[];
+  tagsBySubject: Map<string, TagView[]>;
   onUploaded: (img: ImageView) => void;
+  onTagged: () => void;
 }) {
   const [caption, setCaption] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -589,6 +609,7 @@ function PhotosPanel({
       onUploaded({
         author_hex: selfAuthorHex,
         rkey,
+        subject: `${selfAuthorHex}/network.essmesh.chat.image/${rkey}`,
         content_type: file.type || "application/octet-stream",
         len: bytes.length,
         caption: caption.trim() || null,
@@ -657,6 +678,14 @@ function PhotosPanel({
             <div key={img.rkey}>
               <ImageThumb tableId={tableId} image={img} />
               {img.caption && <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--text-2)" }}>{img.caption}</p>}
+              <div style={{ marginTop: 6 }}>
+                <TagList
+                  tableId={tableId}
+                  subject={img.subject}
+                  tags={tagsBySubject.get(img.subject) ?? []}
+                  onTagged={onTagged}
+                />
+              </div>
             </div>
           ))}
         </div>
@@ -1013,7 +1042,17 @@ function DecisionsPanel({
   );
 }
 
-function SharedDoc({ tableId, members }: { tableId: string; members: ProfileView[] }) {
+function SharedDoc({
+  tableId,
+  members,
+  tagsBySubject,
+  onTagged,
+}: {
+  tableId: string;
+  members: ProfileView[];
+  tagsBySubject: Map<string, TagView[]>;
+  onTagged: () => void;
+}) {
   const { loading, revisions, refresh } = useTableDoc(tableId);
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1130,6 +1169,14 @@ function SharedDoc({ tableId, members }: { tableId: string; members: ProfileView
                     <span style={{ fontSize: 12.5, fontWeight: 600 }}>{author?.name ?? "Someone"}</span>
                   </div>
                   <p style={{ margin: 0, fontSize: 13, color: "var(--text-2)", whiteSpace: "pre-wrap" }}>{rev.text}</p>
+                  <div style={{ marginTop: 6 }}>
+                    <TagList
+                      tableId={tableId}
+                      subject={rev.subject}
+                      tags={tagsBySubject.get(rev.subject) ?? []}
+                      onTagged={onTagged}
+                    />
+                  </div>
                 </div>
                 <button
                   onClick={() => {

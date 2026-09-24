@@ -183,6 +183,7 @@ export const IMAGES: Record<string, ImageView[]> = {
     {
       author_hex: AUTHORS.sequoia,
       rkey: "img-0001",
+      subject: `${AUTHORS.sequoia}/network.essmesh.chat.image/img-0001`,
       content_type: "image/jpeg",
       len: 842_113,
       caption: "The overlook, 7:12am",
@@ -257,7 +258,15 @@ function docRev(offsetMicros: number): string {
   return String(DOC_BASE + offsetMicros).padStart(19, "0");
 }
 
-export const DOC_REVISIONS: Record<string, Record<string, { author_hex: string; rev: string; text: string }[]>> = {
+/** `record_ref`'s convention for a document revision — no `Record`/
+ * `COLLECTION` type exists for one (a plain freeform key, no lexicon),
+ * so this mirrors `tests/tagging.rs`'s cross-lexicon proof and the
+ * Tauri `doc_history`/`doc_load` commands' own computation exactly. */
+function docSubject(authorHex: string, docId: string, rev: string): string {
+  return `${authorHex}/network.essmesh.namespace.doc.${docId}.rev/${rev}`;
+}
+
+export const DOC_REVISIONS: Record<string, Record<string, { author_hex: string; rev: string; text: string; subject: string }[]>> = {
   [GARDEN_TABLE_ID]: {
     // One fixed doc id per Table, "notes" — matches useTableDoc's
     // TABLE_DOC_ID (no doc picker/creation UI yet, a real named gap).
@@ -266,11 +275,13 @@ export const DOC_REVISIONS: Record<string, Record<string, { author_hex: string; 
         author_hex: AUTHORS.marisol,
         rev: docRev(0),
         text: "Draft: workday Saturday 10am, bring gloves.",
+        subject: docSubject(AUTHORS.marisol, "notes", docRev(0)),
       },
       {
         author_hex: AUTHORS.marisol,
         rev: docRev(600_000_000),
         text: "Workday Saturday 10am — bring gloves, we'll do the back beds.",
+        subject: docSubject(AUTHORS.marisol, "notes", docRev(600_000_000)),
       },
       {
         // 120s after the revision above, different author — inside the
@@ -279,6 +290,7 @@ export const DOC_REVISIONS: Record<string, Record<string, { author_hex: string; 
         author_hex: AUTHORS.devon,
         rev: docRev(600_000_000 + 120_000_000),
         text: "Workday moved to Sunday 10am instead — gloves provided this time.",
+        subject: docSubject(AUTHORS.devon, "notes", docRev(600_000_000 + 120_000_000)),
       },
     ],
   },
@@ -288,6 +300,7 @@ export const DOC_REVISIONS: Record<string, Record<string, { author_hex: string; 
         author_hex: AUTHORS.devon,
         rev: "0001",
         text: "Week of the 28th:\nMon — Priya\nWed — Devon\nFri — open",
+        subject: docSubject(AUTHORS.devon, "notes", "0001"),
       },
     ],
   },

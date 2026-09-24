@@ -446,7 +446,7 @@ async fn doc_load(
     state: State<'_, AppState>,
     namespace_id: String,
     doc_id: String,
-) -> Result<Option<(String, String, String)>, String> {
+) -> Result<Option<(String, String, String, String)>, String> {
     let node = state.node.lock().await;
     let node = node.as_ref().ok_or("call spawn_node first")?;
     let docs = state.docs.lock().await;
@@ -456,7 +456,11 @@ async fn doc_load(
     let result = load_document(node, doc, &doc_id)
         .await
         .map_err(|e| e.to_string())?;
-    Ok(result.map(|(rev, author, text)| (rev, hex::encode(author.as_bytes()), text)))
+    Ok(result.map(|(rev, author, text)| {
+        let author_hex = hex::encode(author.as_bytes());
+        let subject = record_ref(&author_hex, &format!("network.essmesh.namespace.doc.{doc_id}.rev"), &rev);
+        (rev, author_hex, text, subject)
+    }))
 }
 
 /// Every revision of a "Shared doc," oldest first — `namespace::
@@ -464,12 +468,23 @@ async fn doc_load(
 /// edited this while you were offline" instead of silently picking one
 /// side, which is exactly the gap `doc_save` replacing `write_text`
 /// exists to close.
+///
+/// The 4th tuple element is a `record_ref` naming this exact revision —
+/// a document revision isn't a `Record`/`COLLECTION` type (a plain
+/// freeform key, no lexicon), so it can't reuse `record_ref`'s usual
+/// `SomeType::COLLECTION` argument the way `ImageView`/`MessageView`
+/// do; this mirrors the "collection" convention
+/// `atproto-iroh-core/tests/tagging.rs`'s cross-lexicon proof already
+/// established for tagging a document revision. Added alongside
+/// wiring Tagging into the Shared doc tab — no core-crate change
+/// needed (tagging.rs was already cross-lexicon by construction), only
+/// this command was missing the field.
 #[tauri::command]
 async fn doc_history(
     state: State<'_, AppState>,
     namespace_id: String,
     doc_id: String,
-) -> Result<Vec<(String, String, String)>, String> {
+) -> Result<Vec<(String, String, String, String)>, String> {
     let node = state.node.lock().await;
     let node = node.as_ref().ok_or("call spawn_node first")?;
     let docs = state.docs.lock().await;
@@ -481,7 +496,11 @@ async fn doc_history(
         .map_err(|e| e.to_string())?;
     Ok(revisions
         .into_iter()
-        .map(|(author, rev, text)| (rev, hex::encode(author.as_bytes()), text))
+        .map(|(author, rev, text)| {
+            let author_hex = hex::encode(author.as_bytes());
+            let subject = record_ref(&author_hex, &format!("network.essmesh.namespace.doc.{doc_id}.rev"), &rev);
+            (rev, author_hex, text, subject)
+        })
         .collect())
 }
 
@@ -622,6 +641,14 @@ async fn upload_image(
 struct ImageView {
     author_hex: String,
     rkey: String,
+    /// `records::record_ref` for this exact image — same reasoning as
+    /// `MessageView::subject` above: lets the frontend pass an image
+    /// straight to `add_tag`/`tags_for`/`pins` without knowing
+    /// `ImageMeta::COLLECTION` itself. Added alongside wiring Tagging
+    /// into the Photos tab (tagging.rs's own cross-lexicon design meant
+    /// no core-crate change was needed here — only this command's view
+    /// struct was missing the field `list_messages` already had).
+    subject: String,
     content_type: String,
     len: u64,
     caption: Option<String>,
@@ -647,13 +674,18 @@ async fn list_images(
         .map_err(|e| e.to_string())?;
     Ok(images
         .into_iter()
-        .map(|(author, rkey, meta)| ImageView {
-            author_hex: hex::encode(author.as_bytes()),
-            rkey,
-            content_type: meta.content_type,
-            len: meta.len,
-            caption: meta.caption,
-            created_at: meta.created_at,
+        .map(|(author, rkey, meta)| {
+            let author_hex = hex::encode(author.as_bytes());
+            let subject = record_ref(&author_hex, images::ImageMeta::COLLECTION, &rkey);
+            ImageView {
+                author_hex,
+                rkey,
+                subject,
+                content_type: meta.content_type,
+                len: meta.len,
+                caption: meta.caption,
+                created_at: meta.created_at,
+            }
         })
         .collect())
 }

@@ -408,10 +408,35 @@ same Book Club table first in a shuffled order, since Join.tsx's own
 the draft profile — flagged here rather than silently left for the
 next person to rediscover, not fixed in this pass.
 
-**Not yet ported — real, current gaps, not oversights**: Tagging on
-Images/Shared docs (Messages only, above), QR *generation*
-(`ticket_to_qr` — scanning is built, Join screen above), the raw
-inspector, relay/control.
+**Tagging on Images/Shared docs — built (2026-09-24).** The gap wasn't
+purely frontend this time, unlike reply-to and the governance forms:
+`tagging::add_tag`/`tags_for` are cross-lexicon by construction
+(CLAUDE.md's batteries-included list — no core-crate change needed
+here either), but two Tauri view structs were missing the `subject`
+field `MessageView` already had. Fixed in `src-tauri/src/lib.rs`:
+`ImageView` gained `subject` (`record_ref` against
+`images::ImageMeta::COLLECTION`, same pattern `MessageView` uses); a
+document revision isn't a `Record`/`COLLECTION` type at all (a plain
+freeform key, no lexicon), so `doc_history`/`doc_load` compute their
+own `record_ref` using the "collection" convention
+`atproto-iroh-core/tests/tagging.rs`'s cross-lexicon proof already
+established — `"network.essmesh.namespace.doc.{doc_id}.rev"`. On the
+frontend, the tag-list-plus-"+Tag"-input UI (previously baked into
+`MessageTags`, the Pin button included) was split: renamed to the
+generic `TagList` with `onPinned` now optional, so Photos and Shared
+doc render it without a Pin button (DESIGN_BRIEF.md's pinning is
+specifically "pinned messages," not photos or docs) while Messages
+keeps both. Each photo gets its own tag list under its caption; each
+Shared-doc history row gets its own tag list under its text — tagging
+a specific revision, not a mutable "current" pointer, matching the
+same tags-are-immutable-records shape as everywhere else tagging is
+used. Two new `TableDetail.test.tsx` tests (tag an existing photo, tag
+a shared-doc revision), both scoped away from Garden for the same
+shared-mock-state reason the governance tests above are.
+
+**Not yet ported — real, current gaps, not oversights**: QR
+*generation* (`ticket_to_qr` — scanning is built, Join screen above),
+the raw inspector, relay/control.
 
 **Design-interview edge cases fleshed out (2026-09-24)**, following a
 gap check against `.impeccable.md`/`DESIGN_BRIEF.md` after the

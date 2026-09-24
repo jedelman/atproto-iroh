@@ -4,7 +4,8 @@ import type { DocRevision } from "../api/types";
 
 const BASE = 1_700_000_000_000_000;
 function rev(offsetMicros: number, author: string, text = "x"): DocRevision {
-  return { author_hex: author, rev: String(BASE + offsetMicros).padStart(19, "0"), text };
+  const revKey = String(BASE + offsetMicros).padStart(19, "0");
+  return { author_hex: author, rev: revKey, text, subject: `${author}/network.essmesh.namespace.doc.notes.rev/${revKey}` };
 }
 
 describe("hasPossibleConflict", () => {

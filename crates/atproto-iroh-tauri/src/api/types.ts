@@ -44,10 +44,14 @@ export interface MessageView {
   created_at: string;
 }
 
-/** `list_images`'s exact Tauri return shape (`ImageView` in lib.rs) — flat. */
+/** `list_images`'s exact Tauri return shape (`ImageView` in lib.rs) — flat.
+ * `subject` is a ready-made `record_ref`, same reasoning as
+ * `MessageView.subject` — lets the frontend pass an image straight to
+ * `add_tag`/`tags_for` without knowing `ImageMeta::COLLECTION` itself. */
 export interface ImageView {
   author_hex: string;
   rkey: string;
+  subject: string;
   content_type: string;
   len: number;
   caption?: string | null;
@@ -113,8 +117,16 @@ export interface TagView {
  * same caveat as the rest of this file. */
 export const PIN_LABEL = "system:pin";
 
+/** `subject` is a `record_ref` naming this exact revision — not a
+ * `Record`/`COLLECTION` type (a document revision is a plain freeform
+ * key, no lexicon), so it follows the convention
+ * `tests/tagging.rs`'s cross-lexicon proof established:
+ * `"network.essmesh.namespace.doc.{doc_id}.rev"` as the "collection"
+ * segment, `rev` as the rkey. Lets a specific revision be tagged the
+ * same way a Message or an image can. */
 export interface DocRevision {
   author_hex: string;
   rev: string;
   text: string;
+  subject: string;
 }

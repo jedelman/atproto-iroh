@@ -312,6 +312,42 @@ describe("TableDetail", () => {
     expect(screen.queryByText("No photos yet.")).not.toBeInTheDocument();
   });
 
+  it("tags an existing photo and sees the tag chip appear", async () => {
+    // Weekend Hikers, not Garden — the fixture photo (Sequoia's "The
+    // overlook, 7:12am") lives there, and tagging it doesn't collide
+    // with the upload test above, which is scoped to Garden.
+    const hikersTableId = TABLES[1].id;
+    renderTable(hikersTableId);
+    await waitFor(() => expect(screen.getByText("Weekend Hikers")).toBeInTheDocument());
+    await userEvent.click(screen.getByText("Photos"));
+
+    const card = screen.getByText("The overlook, 7:12am").closest("div")!;
+    await userEvent.click(within(card).getByText("+ Tag"));
+    await userEvent.type(within(card).getByPlaceholderText("tag name"), "scenic{Enter}");
+
+    expect(await within(card).findByText("#scenic")).toBeInTheDocument();
+  });
+
+  it("tags a shared-doc revision and sees the tag chip appear", async () => {
+    // New Parents Crew, not Garden — a single, non-conflicting revision
+    // (fixtures.ts's DOC_REVISIONS), so there's exactly one "+ Tag"
+    // button to find, no conflict banner or multi-revision noise.
+    const parentsTableId = TABLES[2].id;
+    renderTable(parentsTableId);
+    await waitFor(() => expect(screen.getByText("New Parents Crew")).toBeInTheDocument());
+    await userEvent.click(screen.getByText("Shared doc"));
+
+    // Two matches for this text: the textarea (pre-filled with the
+    // latest revision) and the History row's own <p> — the tag list
+    // lives on the latter.
+    const matches = screen.getAllByText(/Week of the 28th/);
+    const card = matches[matches.length - 1].closest("div")!;
+    await userEvent.click(within(card).getByText("+ Tag"));
+    await userEvent.type(within(card).getByPlaceholderText("tag name"), "schedule{Enter}");
+
+    expect(await within(card).findByText("#schedule")).toBeInTheDocument();
+  });
+
   it("shows the no-pin encouragement, then pins a message and sees it appear", async () => {
     // Weekend Hikers has one message and zero pins in the fixture data —
     // the one Table in this dataset that actually exercises the

@@ -160,6 +160,7 @@ export const mockClient: Client = {
     images[namespaceId].push({
       author_hex: SELF_AUTHOR_HEX,
       rkey,
+      subject: `${SELF_AUTHOR_HEX}/network.essmesh.chat.image/${rkey}`,
       content_type: contentType,
       len: bytes.length,
       caption: caption ?? undefined,
@@ -243,7 +244,12 @@ export const mockClient: Client = {
     const rev = mockRkey();
     docs[namespaceId] ??= {};
     docs[namespaceId][docId] ??= [];
-    docs[namespaceId][docId].push({ author_hex: SELF_AUTHOR_HEX, rev, text });
+    docs[namespaceId][docId].push({
+      author_hex: SELF_AUTHOR_HEX,
+      rev,
+      text,
+      subject: `${SELF_AUTHOR_HEX}/network.essmesh.namespace.doc.${docId}.rev/${rev}`,
+    });
     return rev;
   },
 
