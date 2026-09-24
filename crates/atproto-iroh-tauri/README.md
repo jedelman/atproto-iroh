@@ -225,6 +225,39 @@ documents:
   profile edit can't accidentally erase a founder's existing
   `Some(true)`.
 
+**A third review pass, against those same fixes, found three more —
+none of them "new" bugs so much as robustness/hygiene gaps in how the
+fixes above were written:**
+- **The re-join-clobber fix could silently skip writing a first-time
+  member's profile too.** The existence check (`nodeDid`/`listProfiles`)
+  and the write shared one `try`/`catch`, so a transient failure in
+  either read — not the write itself — would skip the write on a
+  brand-new join, reintroducing "Onboarding's name/sticker never
+  reached a Table" on the common path instead of the rare re-join one.
+  Fixed by giving the existence check its own `try`/`catch` that
+  defaults to "no profile yet" on failure (erring toward writing, the
+  safe direction — worst case is an extra overwrite on a genuine
+  re-join, never a missing profile on a first join); only the write
+  itself stays best-effort against the outer catch.
+- **The `did:iroh:` prefix-stripping snippet was duplicated six times**
+  across Composer, PhotosPanel, DecisionsPanel, ProfileEdit, Feed's
+  header, and now Join — a future change to the prefix format would
+  need finding and fixing in six places, and any one missed would
+  silently reintroduce the exact "resolve self, not a placeholder"
+  class of bug several of those six were themselves fixes for.
+  Extracted to `src/lib/identity.ts` (`resolveSelfAuthorHex`); every
+  call site now goes through it.
+- **`Join.test.tsx`'s re-join test only passed because an earlier test
+  in the file happened to run first** and seed the profile it then
+  checked wasn't clobbered — a real ordering dependency the suite
+  didn't structurally enforce (confirmed by running with
+  `--sequence.shuffle`, which broke it). Fixed by giving it its own
+  dedicated fixture Table (`fixtures.ts`'s `PHOTOCLUB_TABLE_ID`/
+  `"mock-ticket-photoclub"`, alongside the existing book-club one) and
+  making the test self-contained — join once to seed a profile, join
+  again with a different draft, assert the original survives, all
+  within the one test.
+
 **Screenshot-verified, not just test-verified** — a real Playwright +
 headless-Chromium pipeline against `npm run dev`'s mock-backed browser
 session caught three real bugs the type-checker and the test suite both

@@ -12,6 +12,7 @@ import { TABLE_DOC_ID, useTableDoc } from "../hooks/useTableDoc";
 import { useTags } from "../hooks/useTags";
 import { useMutedAuthors } from "../hooks/useMutedAuthors";
 import { hasPossibleConflict } from "../lib/docConflict";
+import { resolveSelfAuthorHex } from "../lib/identity";
 import { api, type ImageView, type MessageView, type ProfileView, type ProposalView, type TagView } from "../api";
 
 type Tab = "messages" | "decisions" | "photos" | "docs";
@@ -375,12 +376,11 @@ function Composer({ tableId, onSent }: { tableId: string; onSent: (m: MessageVie
     if (!trimmed || sending) return;
     setSending(true);
     try {
-      // nodeDid() is "did:iroh:<hex>" — the real self author hex is
-      // needed here so the optimistic entry resolves through
-      // profileFor() exactly the way the real synced-back entry will,
-      // not a placeholder that would only coincidentally look right.
-      const did = await api.nodeDid();
-      const selfAuthorHex = did?.replace(/^did:iroh:/, "") ?? "";
+      // The real self author hex is needed here so the optimistic
+      // entry resolves through profileFor() exactly the way the real
+      // synced-back entry will, not a placeholder that would only
+      // coincidentally look right.
+      const selfAuthorHex = (await resolveSelfAuthorHex(api)) ?? "";
       const rkey = await api.sendMessage(tableId, trimmed);
       onSent({
         author_hex: selfAuthorHex,
@@ -457,8 +457,7 @@ function PhotosPanel({
       // ImageThumb keyed off a wrong hex would fail its own
       // loadImageBytes lookup (mockClient stores bytes under the real
       // hex the upload actually used).
-      const did = await api.nodeDid();
-      const selfAuthorHex = did?.replace(/^did:iroh:/, "") ?? "";
+      const selfAuthorHex = (await resolveSelfAuthorHex(api)) ?? "";
       const buffer = await file.arrayBuffer();
       const bytes = Array.from(new Uint8Array(buffer));
       const rkey = await api.uploadImage(
@@ -612,8 +611,7 @@ function DecisionsPanel({
 
   useEffect(() => {
     (async () => {
-      const did = await api.nodeDid();
-      setSelfAuthorHex(did?.replace(/^did:iroh:/, "") ?? null);
+      setSelfAuthorHex(await resolveSelfAuthorHex(api));
     })();
   }, []);
 

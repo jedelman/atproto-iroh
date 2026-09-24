@@ -11,6 +11,7 @@ import { api } from "../api";
 import { useFeed, type FeedItem } from "../hooks/useFeed";
 import { useMutedAuthors } from "../hooks/useMutedAuthors";
 import { parseRecordRef } from "../lib/recordRef";
+import { resolveSelfAuthorHex } from "../lib/identity";
 
 function itemAuthorHex(item: FeedItem): string {
   switch (item.kind) {
@@ -54,8 +55,8 @@ export function Feed() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const did = await api.nodeDid();
-      if (!cancelled) setSelfAuthorHex(did?.replace(/^did:iroh:/, "") ?? null);
+      const hex = await resolveSelfAuthorHex(api);
+      if (!cancelled) setSelfAuthorHex(hex);
     })();
     return () => {
       cancelled = true;

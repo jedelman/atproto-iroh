@@ -9,6 +9,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { api } from "../api";
 import { useQrScanner } from "../hooks/useQrScanner";
 import { useProfileDraft } from "../hooks/useProfileDraft";
+import { resolveSelfAuthorHex } from "../lib/identity";
 
 export function Join() {
   const navigate = useNavigate();
@@ -47,12 +48,29 @@ export function Join() {
       // -loss class ProfileEdit.tsx's own round-tripped-field comment
       // exists to avoid. Only write the draft profile if this author
       // has no profile in this Table yet.
+      //
+      // A later review pass caught a second, narrower issue: the
+      // existence check and the write used to share one try/catch, so
+      // a transient failure in nodeDid()/listProfiles() (not the write
+      // itself) would silently skip the write too — reintroducing the
+      // very "shows up as Someone" bug this whole fix exists for, now
+      // on the common first-join path rather than the rarer re-join
+      // one. The existence check gets its own try/catch that defaults
+      // to "no profile yet" on failure, so a lookup error still errs
+      // toward writing (safe: it can only cause an extra overwrite on
+      // a genuine re-join, not a missing profile on a first join) —
+      // only the write itself stays best-effort against the outer
+      // catch below.
+      let alreadyHasProfile = false;
       try {
-        const did = await api.nodeDid();
-        const selfAuthorHex = did?.replace(/^did:iroh:/, "") ?? "";
+        const selfAuthorHex = (await resolveSelfAuthorHex(api)) ?? "";
         const existing = await api.listProfiles(tableId);
-        const alreadyHasProfile = existing.some((p) => p.author_hex === selfAuthorHex);
-        if (!alreadyHasProfile) {
+        alreadyHasProfile = existing.some((p) => p.author_hex === selfAuthorHex);
+      } catch {
+        // Couldn't tell — proceed as if this is a first join.
+      }
+      if (!alreadyHasProfile) {
+        try {
           await api.updateProfile(tableId, {
             name: draft.name || "Someone new",
             category: "individual",
@@ -61,9 +79,9 @@ export function Join() {
             description: null,
             governance_eligible: null,
           });
+        } catch {
+          // Best-effort — the join itself is what matters here.
         }
-      } catch {
-        // Best-effort — the join itself is what matters here.
       }
       navigate(`/table/${tableId}`);
     } catch (err) {

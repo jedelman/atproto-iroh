@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Sticker, STICKER_IDS, type StickerId } from "../components/Sticker";
 import { api, type NodeCategory, type NodeProfile } from "../api";
+import { resolveSelfAuthorHex } from "../lib/identity";
 
 const CATEGORY_LABELS: Record<NodeCategory, string> = {
   cooperative: "Cooperative",
@@ -42,8 +43,7 @@ export function ProfileEdit() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const did = await api.nodeDid();
-      const selfAuthorHex = did?.replace(/^did:iroh:/, "") ?? "";
+      const selfAuthorHex = (await resolveSelfAuthorHex(api)) ?? "";
       const profiles = await api.listProfiles(tableId);
       const mine = profiles.find((p) => p.author_hex === selfAuthorHex)?.profile;
       if (cancelled) return;

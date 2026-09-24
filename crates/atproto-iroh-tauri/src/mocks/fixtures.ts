@@ -29,6 +29,14 @@ const GARDEN_TABLE_ID = "table-garden0000000000000000000000000000000000000000000
 const HIKERS_TABLE_ID = "table-hikers0000000000000000000000000000000000000000000001";
 const PARENTS_TABLE_ID = "table-parents000000000000000000000000000000000000000000001";
 const BOOKCLUB_TABLE_ID = "table-bookclub00000000000000000000000000000000000000000001";
+// A second Table reserved for the join demo, separate from the book
+// club one above — Join.test.tsx's re-join test needs a Table it can
+// join twice within one self-contained test (once to seed a profile,
+// once to prove a second join doesn't clobber it) without depending on
+// another test having already joined the book club table first, which
+// mockClient's shared module-level state made a real, fragile ordering
+// requirement — found in a code-review pass.
+const PHOTOCLUB_TABLE_ID = "table-photoclub0000000000000000000000000000000000000000001";
 
 export const AUTHORS = {
   you: SELF_AUTHOR_HEX,
@@ -72,13 +80,21 @@ export const TABLES: MockTable[] = [
     name: "Thursday Book Club",
     memberAuthorHexes: [AUTHORS.priya, AUTHORS.sequoia],
   },
+  {
+    // Also deliberately doesn't include AUTHORS.you — see this id's own
+    // comment above for why a second one of these exists.
+    id: PHOTOCLUB_TABLE_ID,
+    name: "Weekend Photo Club",
+    memberAuthorHexes: [AUTHORS.devon],
+  },
 ];
 
 /** Which Tables "you" (SELF_AUTHOR_HEX) already hold a capability into
- * before any mock join happens — everything in TABLES except the one
+ * before any mock join happens — everything in TABLES except the ones
  * reserved for the join demo. `mockClient.ts`'s `listTables`/
  * `listNamespaces` are scoped to this, not all of `TABLES`. */
-export const TABLES_YOU_ARE_IN = TABLES.filter((t) => t.id !== BOOKCLUB_TABLE_ID).map((t) => t.id);
+const JOIN_DEMO_TABLE_IDS = new Set([BOOKCLUB_TABLE_ID, PHOTOCLUB_TABLE_ID]);
+export const TABLES_YOU_ARE_IN = TABLES.filter((t) => !JOIN_DEMO_TABLE_IDS.has(t.id)).map((t) => t.id);
 
 /** Fake "tickets" the mock Join/QR-scan flow accepts — stand-ins for a
  * real `DocTicket` string, which the mock backend has no way to parse
@@ -87,6 +103,7 @@ export const TABLES_YOU_ARE_IN = TABLES.filter((t) => t.id !== BOOKCLUB_TABLE_ID
  */
 export const MOCK_TICKETS: Record<string, string> = {
   "mock-ticket-bookclub": BOOKCLUB_TABLE_ID,
+  "mock-ticket-photoclub": PHOTOCLUB_TABLE_ID,
 };
 
 export const PROFILES: Record<string, NodeProfile> = {

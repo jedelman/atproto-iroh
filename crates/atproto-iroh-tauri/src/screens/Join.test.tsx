@@ -33,14 +33,6 @@ describe("Join", () => {
     // visited Profile edit. useProfileDraft is localStorage-backed —
     // seeding it here is what a completed Onboarding screen would have
     // already done.
-    //
-    // Runs before the other tests below that also join the book club
-    // fixture on purpose: mockClient's profiles are module-level state
-    // that persists across tests in this file, and a follow-up review
-    // fix made this call correctly skip writing once a profile already
-    // exists (to avoid clobbering a real member's data on a re-join) —
-    // so this has to be the first join against that fixture, or it
-    // would itself hit that skip and never see "Nia" appear.
     localStorage.setItem(
       "atproto-iroh:profile-draft",
       JSON.stringify({ name: "Nia", avatar: "sky" }),
@@ -67,19 +59,32 @@ describe("Join", () => {
     // a re-join of a Table already belonged to (Join is a persistent,
     // always-reachable entry point) — silently overwriting a real
     // member's name/avatar/neighborhood/description back to onboarding
-    // defaults. By this point in the file, self already has a "Nia"
-    // profile in the book club table from the first test above; a
-    // different draft name here should NOT replace it.
+    // defaults. Self-contained (its own dedicated fixture table, joined
+    // twice in this one test) rather than relying on another test in
+    // this file having already joined first — a code-review pass found
+    // that ordering dependency itself was fragile (mockClient's
+    // profiles are module-level state shared across every test in this
+    // file; a shuffled or reordered run would break it silently).
+    localStorage.setItem(
+      "atproto-iroh:profile-draft",
+      JSON.stringify({ name: "Nia", avatar: "sky" }),
+    );
+    renderJoin();
+    await userEvent.type(screen.getByPlaceholderText("Paste the ticket text here"), "mock-ticket-photoclub");
+    await userEvent.click(screen.getByText("Join with this ticket"));
+    await waitFor(() => expect(screen.getByText("Weekend Photo Club")).toBeInTheDocument());
+    expect(await screen.findByText("Nia")).toBeInTheDocument();
+
     localStorage.setItem(
       "atproto-iroh:profile-draft",
       JSON.stringify({ name: "Someone Else Entirely", avatar: "gold" }),
     );
     renderJoin();
-    await userEvent.type(screen.getByPlaceholderText("Paste the ticket text here"), "mock-ticket-bookclub");
+    await userEvent.type(screen.getByPlaceholderText("Paste the ticket text here"), "mock-ticket-photoclub");
     await userEvent.click(screen.getByText("Join with this ticket"));
 
-    await waitFor(() => expect(screen.getByText("Thursday Book Club")).toBeInTheDocument());
-    expect(await screen.findByText("Nia")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText("Weekend Photo Club").length).toBeGreaterThan(0));
+    expect(await screen.findAllByText("Nia")).not.toHaveLength(0);
     expect(screen.queryByText("Someone Else Entirely")).not.toBeInTheDocument();
   });
 
