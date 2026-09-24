@@ -879,7 +879,21 @@ function DecisionsPanel({
           Not a majority vote — this passes automatically once the window
           closes, unless enough people object. Silence counts as support.
         </p>
-        <select value={type} onChange={(e) => setType(e.target.value as DecisionType)} style={{ ...selectStyle, marginBottom: 8, width: "100%" }}>
+        <select
+          value={type}
+          onChange={(e) => {
+            // A stale subjectMemberHex from a previous type must not
+            // survive the switch — found in code review: the admit/
+            // remove dropdowns' candidate lists differ per type (and
+            // can go empty), so an old selection can point at a member
+            // who's no longer even an option under the new type, yet
+            // still get silently submitted since canCreate only checks
+            // that the hex is non-empty, not that it's still valid.
+            setType(e.target.value as DecisionType);
+            setSubjectMemberHex("");
+          }}
+          style={{ ...selectStyle, marginBottom: 8, width: "100%" }}
+        >
           <option value="poll">Poll</option>
           <option value="admitCoSigner">Admit a co-signer</option>
           <option value="removeCoSigner">Remove a co-signer</option>

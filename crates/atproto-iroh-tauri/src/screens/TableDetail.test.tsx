@@ -217,6 +217,26 @@ describe("TableDetail", () => {
     expect(screen.getByDisplayValue("No eligible members")).toBeInTheDocument();
   });
 
+  it("clears a stale member selection when switching decision type", async () => {
+    // Code-review finding: picking a member under "Remove a co-signer"
+    // then switching to "Admit a co-signer" used to leave the old
+    // selection in state even though it's no longer a visible option
+    // (Hikers' every member is already eligible, so the admit dropdown
+    // has none) — Propose stayed enabled and would have silently
+    // submitted the stale hex under the new type.
+    const hikersTableId = TABLES[1].id;
+    renderTable(hikersTableId);
+    await waitFor(() => expect(screen.getByText("Weekend Hikers")).toBeInTheDocument());
+    await userEvent.click(screen.getByText("Decisions"));
+
+    await userEvent.selectOptions(screen.getByDisplayValue("Poll"), "Remove a co-signer");
+    await userEvent.selectOptions(screen.getByDisplayValue("Choose a member…"), "Sequoia");
+    await userEvent.selectOptions(screen.getByDisplayValue("Remove a co-signer"), "Admit a co-signer");
+
+    expect(screen.getByDisplayValue("No eligible members")).toBeInTheDocument();
+    expect(screen.getByText("Propose")).toBeDisabled();
+  });
+
   it("proposes a policy change and shows the class-specific label", async () => {
     const hikersTableId = TABLES[1].id;
     renderTable(hikersTableId);
