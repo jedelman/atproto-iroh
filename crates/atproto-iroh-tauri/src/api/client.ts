@@ -11,11 +11,13 @@
 
 import type {
   DocRevision,
+  GovernanceClass,
   GovernanceStateView,
   ImageView,
   MessageView,
   NodeCategory,
   NodeProfile,
+  PolicyChange,
   ProfileView,
   ProposalView,
   SignalType,
@@ -76,14 +78,20 @@ export interface Client {
   loadImageBytes(namespaceId: string, authorHex: string, rkey: string): Promise<number[] | null>;
   listProposals(namespaceId: string): Promise<ProposalView[]>;
   governanceState(namespaceId: string): Promise<GovernanceStateView>;
-  /** Posts a new decision/poll — hardcoded to `GovernanceClass::General`,
-   * same relabeling the old plain-JS app's Polls section used
-   * (CLAUDE.md's batteries-included list): "not a majority vote" is real,
-   * not just copy — this ratifies by default absent enough Block
-   * signals, same objection-window mechanic as every other decision
-   * here. No subject-member/policy-change UI — that's real cosigner-
-   * governance complexity out of scope for this pass. */
-  createDecision(namespaceId: string, title: string, deadlineHours: number): Promise<string>;
+  /** Posts a new decision — General-class defaults to the "Poll"
+   * relabeling the old plain-JS app used (CLAUDE.md's batteries-included
+   * list): "not a majority vote" is real, not just copy — this ratifies
+   * by default absent enough Block signals, same objection-window
+   * mechanic as every other decision here. `subjectMemberHex` (required
+   * on admitCoSigner/removeCoSigner) and `policyChange` (required on
+   * changePolicy) are optional and ignored on General, matching
+   * `Proposal`'s own optionality. */
+  createDecision(
+    namespaceId: string,
+    title: string,
+    deadlineHours: number,
+    extra?: { class?: GovernanceClass; subjectMemberHex?: string; policyChange?: PolicyChange },
+  ): Promise<string>;
   /** Signals on a decision — `proposalAuthorHex`/`proposalRkey` name the
    * target since `RecordIdentifier` is `(namespace, author, key)`,
    * SPEC.md §3.4, not just a key. */

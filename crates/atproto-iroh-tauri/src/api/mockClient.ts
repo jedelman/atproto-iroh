@@ -181,7 +181,7 @@ export const mockClient: Client = {
     return GOVERNANCE_STATE[namespaceId] ?? { eligible_hex: [] };
   },
 
-  async createDecision(namespaceId, title, deadlineHours) {
+  async createDecision(namespaceId, title, deadlineHours, extra) {
     const rkey = mockRkey();
     proposals[namespaceId] ??= [];
     proposals[namespaceId].push({
@@ -189,8 +189,10 @@ export const mockClient: Client = {
       rkey,
       proposal: {
         title,
-        class: "general",
+        class: extra?.class ?? "general",
         deadline: new Date(Date.now() + deadlineHours * 3_600_000).toISOString(),
+        policy_change: extra?.policyChange ?? null,
+        subject_member: extra?.subjectMemberHex ?? null,
         created_at: new Date().toISOString(),
       },
       status: { state: "open", blockers: [] },

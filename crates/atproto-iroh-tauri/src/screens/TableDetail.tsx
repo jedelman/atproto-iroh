@@ -17,7 +17,19 @@ import { hasPossibleConflict } from "../lib/docConflict";
 import { resolveSelfAuthorHex } from "../lib/identity";
 import { isPinVisible } from "../lib/mutedPins";
 import { cardStyle, rowCardStyle } from "../lib/cardStyle";
-import { api, PIN_LABEL, type ImageView, type MessageView, type ProfileView, type ProposalView, type TagView } from "../api";
+import {
+  api,
+  PIN_LABEL,
+  type GovernanceClass,
+  type ImageView,
+  type MessageView,
+  type PolicyChange,
+  type PolicyValue,
+  type Proposal,
+  type ProfileView,
+  type ProposalView,
+  type TagView,
+} from "../api";
 
 type Tab = "messages" | "decisions" | "photos" | "docs";
 
@@ -287,6 +299,7 @@ export function TableDetail() {
             tableId={id ?? ""}
             proposals={proposals}
             eligibleHex={eligibleHex}
+            members={members}
             onChanged={refreshProposals}
           />
         )}
@@ -699,32 +712,100 @@ function ImageThumb({ tableId, image }: { tableId: string; image: ImageView }) {
   );
 }
 
+type DecisionType = "poll" | "admitCoSigner" | "removeCoSigner" | "changePolicy";
+
+// GovernanceClass values a policy change can actually target —
+// PolicyChange.for_class (governance.rs) has no "general" field, since
+// General-class decisions were never policy-governed to begin with.
+const POLICY_TARGET_CLASSES: { class: GovernanceClass; label: string }[] = [
+  { class: "admitCoSigner", label: "Admitting co-signers" },
+  { class: "removeCoSigner", label: "Removing co-signers" },
+  { class: "changePolicy", label: "Changing policy" },
+];
+
+function policyChangeField(target: GovernanceClass, value: PolicyValue): PolicyChange {
+  switch (target) {
+    case "admitCoSigner":
+      return { admit_co_signer: value };
+    case "removeCoSigner":
+      return { remove_co_signer: value };
+    default:
+      return { change_policy: value };
+  }
+}
+
+function classLabel(p: Proposal): string | null {
+  switch (p.class) {
+    case "admitCoSigner":
+      return "Admit co-signer";
+    case "removeCoSigner":
+      return "Remove co-signer";
+    case "changePolicy":
+      return "Change policy";
+    default:
+      return null;
+  }
+}
+
 function DecisionsPanel({
   tableId,
   proposals,
   eligibleHex,
+  members,
   onChanged,
 }: {
   tableId: string;
   proposals: ProposalView[];
   eligibleHex: string[];
+  members: ProfileView[];
   onChanged: () => void;
 }) {
   const selfAuthorHex = useSelfAuthorHex();
+  const [type, setType] = useState<DecisionType>("poll");
   const [title, setTitle] = useState("");
   const [deadlineHours, setDeadlineHours] = useState(72);
   const [creating, setCreating] = useState(false);
   const [voting, setVoting] = useState<string | null>(null);
+  const [subjectMemberHex, setSubjectMemberHex] = useState("");
+  const [policyTargetClass, setPolicyTargetClass] = useState<GovernanceClass>("admitCoSigner");
+  const [windowDays, setWindowDays] = useState(3);
+  const [blockThreshold, setBlockThreshold] = useState(2);
 
   const canWeighIn = selfAuthorHex !== null && eligibleHex.includes(selfAuthorHex);
+  const admittableMembers = members.filter((m) => !eligibleHex.includes(m.author_hex));
+  const removableMembers = members.filter((m) => eligibleHex.includes(m.author_hex));
+
+  function nameFor(hex: string): string {
+    return profileFor(members, hex)?.name ?? "Someone";
+  }
 
   async function create() {
-    const trimmed = title.trim();
-    if (!trimmed || creating) return;
+    if (creating) return;
     setCreating(true);
     try {
-      await api.createDecision(tableId, trimmed, deadlineHours);
-      setTitle("");
+      if (type === "poll") {
+        const trimmed = title.trim();
+        if (!trimmed) return;
+        await api.createDecision(tableId, trimmed, deadlineHours);
+        setTitle("");
+      } else if (type === "admitCoSigner" || type === "removeCoSigner") {
+        if (!subjectMemberHex) return;
+        const verb = type === "admitCoSigner" ? "Admit" : "Remove";
+        await api.createDecision(tableId, `${verb} ${nameFor(subjectMemberHex)} as co-signer`, deadlineHours, {
+          class: type,
+          subjectMemberHex,
+        });
+        setSubjectMemberHex("");
+      } else {
+        const targetLabel = POLICY_TARGET_CLASSES.find((t) => t.class === policyTargetClass)?.label ?? policyTargetClass;
+        await api.createDecision(tableId, `Change policy: ${targetLabel.toLowerCase()}`, deadlineHours, {
+          class: "changePolicy",
+          policyChange: policyChangeField(policyTargetClass, {
+            window_seconds: windowDays * 86_400,
+            block_threshold: blockThreshold,
+          }),
+        });
+      }
       onChanged();
     } finally {
       setCreating(false);
@@ -742,6 +823,23 @@ function DecisionsPanel({
     }
   }
 
+  const canCreate =
+    !creating &&
+    (type === "poll"
+      ? title.trim().length > 0
+      : type === "admitCoSigner" || type === "removeCoSigner"
+        ? subjectMemberHex.length > 0
+        : true);
+
+  const selectStyle: React.CSSProperties = {
+    background: "var(--bg)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
+    color: "var(--text)",
+    padding: "9px 10px",
+    fontSize: 13.5,
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ ...cardStyle, padding: 14 }}>
@@ -752,33 +850,85 @@ function DecisionsPanel({
           Not a majority vote — this passes automatically once the window
           closes, unless enough people object. Silence counts as support.
         </p>
+        <select value={type} onChange={(e) => setType(e.target.value as DecisionType)} style={{ ...selectStyle, marginBottom: 8, width: "100%" }}>
+          <option value="poll">Poll</option>
+          <option value="admitCoSigner">Admit a co-signer</option>
+          <option value="removeCoSigner">Remove a co-signer</option>
+          <option value="changePolicy">Change policy</option>
+        </select>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="What are you deciding?"
-            style={{
-              flexGrow: 1,
-              minWidth: 160,
-              background: "var(--bg)",
-              border: "1px solid var(--border)",
-              borderRadius: 10,
-              color: "var(--text)",
-              padding: "9px 12px",
-              fontSize: 13.5,
-            }}
-          />
+          {type === "poll" && (
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="What are you deciding?"
+              style={{
+                flexGrow: 1,
+                minWidth: 160,
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                color: "var(--text)",
+                padding: "9px 12px",
+                fontSize: 13.5,
+              }}
+            />
+          )}
+          {(type === "admitCoSigner" || type === "removeCoSigner") && (
+            <select
+              value={subjectMemberHex}
+              onChange={(e) => setSubjectMemberHex(e.target.value)}
+              style={{ ...selectStyle, flexGrow: 1, minWidth: 160 }}
+            >
+              <option value="">
+                {(type === "admitCoSigner" ? admittableMembers : removableMembers).length === 0
+                  ? "No eligible members"
+                  : "Choose a member…"}
+              </option>
+              {(type === "admitCoSigner" ? admittableMembers : removableMembers).map((m) => (
+                <option key={m.author_hex} value={m.author_hex}>
+                  {m.profile.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {type === "changePolicy" && (
+            <>
+              <select
+                value={policyTargetClass}
+                onChange={(e) => setPolicyTargetClass(e.target.value as GovernanceClass)}
+                style={{ ...selectStyle, flexGrow: 1, minWidth: 160 }}
+              >
+                {POLICY_TARGET_CLASSES.map((t) => (
+                  <option key={t.class} value={t.class}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                min={1}
+                value={windowDays}
+                onChange={(e) => setWindowDays(Number(e.target.value))}
+                aria-label="Objection window, in days"
+                title="Objection window, in days"
+                style={{ ...selectStyle, width: 70 }}
+              />
+              <input
+                type="number"
+                min={1}
+                value={blockThreshold}
+                onChange={(e) => setBlockThreshold(Number(e.target.value))}
+                aria-label="Block threshold"
+                title="How many objections it takes to block"
+                style={{ ...selectStyle, width: 70 }}
+              />
+            </>
+          )}
           <select
             value={deadlineHours}
             onChange={(e) => setDeadlineHours(Number(e.target.value))}
-            style={{
-              background: "var(--bg)",
-              border: "1px solid var(--border)",
-              borderRadius: 10,
-              color: "var(--text)",
-              padding: "9px 10px",
-              fontSize: 13.5,
-            }}
+            style={selectStyle}
           >
             <option value={24}>1 day</option>
             <option value={72}>3 days</option>
@@ -786,7 +936,7 @@ function DecisionsPanel({
           </select>
           <button
             onClick={create}
-            disabled={!title.trim() || creating}
+            disabled={!canCreate}
             style={{
               background: "var(--accent)",
               color: "var(--ink)",
@@ -795,7 +945,7 @@ function DecisionsPanel({
               padding: "9px 16px",
               fontSize: 13.5,
               fontWeight: 700,
-              opacity: !title.trim() || creating ? 0.5 : 1,
+              opacity: !canCreate ? 0.5 : 1,
             }}
           >
             Propose
@@ -809,6 +959,12 @@ function DecisionsPanel({
         proposals.map((p) => (
           <div key={p.rkey} style={{ ...cardStyle, padding: 14 }}>
             <p style={{ margin: "0 0 6px", fontSize: 14.5, fontWeight: 600 }}>{p.proposal.title}</p>
+            {classLabel(p.proposal) && (
+              <p style={{ margin: "0 0 6px", fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                {classLabel(p.proposal)}
+                {p.proposal.subject_member ? ` · ${nameFor(p.proposal.subject_member)}` : ""}
+              </p>
+            )}
             {p.proposal.description && (
               <p style={{ margin: 0, fontSize: 13, color: "var(--text-2)" }}>{p.proposal.description}</p>
             )}

@@ -81,8 +81,14 @@ describe("TableDetail", () => {
     renderTable(hikersTableId);
     await waitFor(() => expect(screen.getByText("Weekend Hikers")).toBeInTheDocument());
 
-    const overlookText = "Made it to the overlook before the fog rolled in. Worth the 6am start.";
-    const card = screen.getByText(overlookText).closest("div")!;
+    // Found via --sequence.shuffle: if the pin test above already ran
+    // and pinned this same message, its text appears twice on the page
+    // (the pinned-welcome banner and the Messages list), so looking it
+    // up by text is ambiguous depending on run order. The "Reply"
+    // button only ever exists on the real message card, never the
+    // pinned banner, so it's an unambiguous anchor regardless of pin
+    // state.
+    const card = screen.getByText("Reply").closest("div")!;
     await userEvent.click(within(card).getByText("Reply"));
 
     expect(screen.getByText(/Replying to Sequoia/)).toBeInTheDocument();
@@ -171,6 +177,58 @@ describe("TableDetail", () => {
     await waitFor(() =>
       expect(within(card).getByText(/Did not pass/)).toBeInTheDocument(),
     );
+  });
+
+  // Weekend Hikers, not Garden, for all three governance-form tests
+  // below — Garden is the one Table with fixture proposals other tests
+  // assert exact counts/text against (e.g. "shows a real decision"'s
+  // getByText("Open")), and mockClient's proposals list is module-level
+  // state that persists across tests in this file; proposing on Garden
+  // would leak an extra "Open" pill into those tests depending on run
+  // order (confirmed by --sequence.shuffle, same hazard this file's
+  // other tests already work around for messages/tags/pins).
+
+  it("proposes removing a co-signer and shows the class-specific label", async () => {
+    const hikersTableId = TABLES[1].id;
+    renderTable(hikersTableId);
+    await waitFor(() => expect(screen.getByText("Weekend Hikers")).toBeInTheDocument());
+    await userEvent.click(screen.getByText("Decisions"));
+
+    await userEvent.selectOptions(screen.getByDisplayValue("Poll"), "Remove a co-signer");
+    // Every Hikers member is already governance-eligible (fixtures.ts's
+    // GOVERNANCE_STATE), so the admit dropdown would show "No eligible
+    // members" — remove is the one that actually has candidates there.
+    await userEvent.selectOptions(screen.getByDisplayValue("Choose a member…"), "Sequoia");
+    await userEvent.click(screen.getByText("Propose"));
+
+    expect(await screen.findByText("Remove Sequoia as co-signer")).toBeInTheDocument();
+    const card = screen.getByText("Remove Sequoia as co-signer").closest("div")!;
+    expect(card).toHaveTextContent("Remove co-signer");
+    expect(card).toHaveTextContent("Sequoia");
+  });
+
+  it("shows no eligible members to admit when everyone already is", async () => {
+    const hikersTableId = TABLES[1].id;
+    renderTable(hikersTableId);
+    await waitFor(() => expect(screen.getByText("Weekend Hikers")).toBeInTheDocument());
+    await userEvent.click(screen.getByText("Decisions"));
+
+    await userEvent.selectOptions(screen.getByDisplayValue("Poll"), "Admit a co-signer");
+    expect(screen.getByDisplayValue("No eligible members")).toBeInTheDocument();
+  });
+
+  it("proposes a policy change and shows the class-specific label", async () => {
+    const hikersTableId = TABLES[1].id;
+    renderTable(hikersTableId);
+    await waitFor(() => expect(screen.getByText("Weekend Hikers")).toBeInTheDocument());
+    await userEvent.click(screen.getByText("Decisions"));
+
+    await userEvent.selectOptions(screen.getByDisplayValue("Poll"), "Change policy");
+    await userEvent.click(screen.getByText("Propose"));
+
+    expect(await screen.findByText("Change policy: admitting co-signers")).toBeInTheDocument();
+    const card = screen.getByText("Change policy: admitting co-signers").closest("div")!;
+    expect(card).toHaveTextContent("Change policy");
   });
 
   it("switches to the Shared doc tab, shows the real conflict banner, and lets you pick a revision", async () => {

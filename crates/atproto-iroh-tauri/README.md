@@ -363,11 +363,55 @@ this closes reply-to itself, not a separate threaded-conversation
 screen, which was never clearly asked for and is a real IA decision on
 its own.
 
-**Not yet ported — real, current gaps, not oversights**: the full
-Governance UI beyond General-class decisions (no admit/remove-cosigner
-or policy-change proposal forms), Tagging on Images/Shared docs
-(Messages only, above), QR *generation* (`ticket_to_qr` — scanning is
-built, Join screen above), the raw inspector, relay/control.
+**Full governance UI — built (2026-09-24).** Same pattern as reply-to
+above: the Tauri `create_proposal` command already accepted `class`,
+`subject_member_hex`, and `policy_change` (nothing about that command
+changed), and the frontend types (`GovernanceClass`, `PolicyChange`,
+`Proposal.subject_member`) were already fully modeled — the gap was
+entirely the "New decision" form only ever sending
+`GovernanceClass::General`. `Client.createDecision` gained an optional
+4th `extra` param (`class`/`subjectMemberHex`/`policyChange`); the New
+decision card in `TableDetail.tsx`'s `DecisionsPanel` gained a type
+selector — Poll (unchanged default), Admit a co-signer, Remove a
+co-signer, Change policy — each revealing its own fields: a member
+picker (filtered to non-eligible members for admit, eligible members
+for remove — `PolicyChange.for_class`'s own three real targets, `admit
+CoSigner`/`removeCoSigner`/`changePolicy`, for the policy-change
+target dropdown, matching `governance.rs`'s own `for_class` exactly,
+since `General` was never policy-governed), and a window/threshold pair
+for policy changes. Every proposal in the list now shows a small
+class label (and the resolved subject member's name) when it isn't a
+plain Poll, reusing the same Support/Object voting UI regardless of
+class — no new interaction model, since ratification works identically
+across classes. Not built: the mock backend doesn't actually apply a
+ratified admit/remove/policy-change proposal's effect back onto
+`eligible_hex` (the real backend's `fold::fold_namespace` does this by
+construction; the mock's `signalDecision` already had a narrower
+"block-only" special case flagged as intentionally not generalized in
+an earlier `/simplify` pass, and this is the same call extended to a
+second field) — so admitting/removing someone in the mock demo creates
+a real, votable proposal but won't visibly change the Members list's
+"can weigh in on decisions" line once it ratifies. Three new
+`TableDetail.test.tsx` tests exercise remove-co-signer, the
+no-admittable-candidates empty state, and change-policy, all scoped to
+Weekend Hikers rather than Garden — Garden is the one Table other tests
+assert exact proposal counts/text against, and `--sequence.shuffle`
+confirmed proposing on it would leak an extra "Open" pill into those
+assertions depending on run order (the same shared-module-state hazard
+this file already works around elsewhere, now hit by a new class of
+test). A pre-existing, unrelated flake was also found running the full
+suite under `--sequence.shuffle` (not introduced by this work, and not
+present under a normal `npx vitest run`): `Join.test.tsx`'s "carries
+the Onboarding name/sticker" test can fail if another test joins the
+same Book Club table first in a shuffled order, since Join.tsx's own
+"don't clobber an existing profile" check then correctly skips writing
+the draft profile — flagged here rather than silently left for the
+next person to rediscover, not fixed in this pass.
+
+**Not yet ported — real, current gaps, not oversights**: Tagging on
+Images/Shared docs (Messages only, above), QR *generation*
+(`ticket_to_qr` — scanning is built, Join screen above), the raw
+inspector, relay/control.
 
 **Design-interview edge cases fleshed out (2026-09-24)**, following a
 gap check against `.impeccable.md`/`DESIGN_BRIEF.md` after the
