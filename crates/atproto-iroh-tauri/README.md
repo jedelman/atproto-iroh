@@ -349,6 +349,58 @@ inspector, relay/control). Functionally, this rebuild still covers
 direction on seven screens, over a complete-but-undesigned UI on
 eight) that needs the remaining screens built to reach parity.
 
+**Design-interview edge cases fleshed out (2026-09-24)**, following a
+gap check against `.impeccable.md`/`DESIGN_BRIEF.md` after the
+`/simplify` pass above — three real, previously-flagged gaps closed:
+
+- **No pinned-welcome empty state.** §5's "a brand-new Table without a
+  pinned welcome shouldn't feel broken or half-finished" had no real
+  copy — the pinned-messages block just rendered nothing when
+  `visiblePins.length === 0`. Fixed with a real line ("Nothing pinned
+  yet — pin a message below to say what this Table's about"). **Found
+  a deeper gap fixing this**: there was no way to pin a message from
+  the UI at all — `tagging::pins()`/`PIN_LABEL` were read-only wired
+  (the top-of-screen strip), with no write path, even though pinning
+  has been "anyone can pin, one per author" since the design brief.
+  Added a real Pin action to `MessageTags` (`api.addTag(tableId,
+  subject, PIN_LABEL)`) and a `useTable.ts` `refreshPins()` (same shape
+  as the existing `refreshProposals()`) so pinning refreshes the strip
+  without a full Table reload. `TableDetail.test.tsx`'s new test
+  exercises the whole path against the mock backend: empty-state copy
+  → click Pin → the encouragement text is replaced by a real pinned
+  card, not just a state assertion.
+- **No motion anywhere** — confirmed by grep, not assumed: zero CSS
+  transitions, keyframes, or inline `transition` properties existed in
+  the whole frontend before this pass, despite DESIGN_BRIEF.md §6/§8
+  naming three specific moments worth real investment. Added, scoped to
+  exactly those three, plus a `prefers-reduced-motion` guard in
+  `global.css` covering all of it:
+  - **Sticker-picking**: `StickerPicker`'s buttons get a hover/press
+    scale (`.sticker-btn`), and `Sticker`'s selection ring transitions
+    in rather than popping instantly.
+  - **The join flow**: the camera view fades/scales in on reveal
+    (`.fade-scale-in`); landing on a Table right after joining (not
+    just opening one you already belonged to) gives the "who's here"
+    strip a real arrival moment (`.joined-pop`), threaded through via
+    `navigate(..., { state: { justJoined: true } })` from `Join.tsx`
+    and read with `useLocation()` in `TableDetail.tsx`.
+  - **Decision-status changes**: the status pill's color transitions
+    (`.status-pill`) rather than snapping when a signal flips Open to
+    Passed/Blocked.
+- **Offline/no-peers-reachable state — deliberately NOT built.** §5
+  flags this as "a real state given the P2P model, currently
+  invisible," and it still is: checked whether it could be closed
+  alongside the other two, and it can't be without new backend surface
+  first. iroh's `Endpoint::remote_info` (checked directly in the
+  vendored crate source) needs a specific peer id to query, not a
+  general "how many peers can I currently reach" — there's no existing
+  `Client` command, mock or real, that could back a UI state honestly.
+  Building one is a real, scoped addition (a core method over
+  `Node`'s `router.endpoint()`, a Tauri command, a frontend hook) but a
+  materially bigger one than the two above, and out of proportion to
+  this pass — flagged here rather than faked with a placeholder banner
+  that isn't wired to anything real.
+
 ## What's real here
 
 - `src-tauri/` is a genuine Tauri 2 app: `atproto-iroh-core` is a normal

@@ -224,6 +224,27 @@ describe("TableDetail", () => {
     expect(screen.queryByText("No photos yet.")).not.toBeInTheDocument();
   });
 
+  it("shows the no-pin encouragement, then pins a message and sees it appear", async () => {
+    // Weekend Hikers has one message and zero pins in the fixture data —
+    // the one Table in this dataset that actually exercises the
+    // DESIGN_BRIEF.md §5 "no-welcome-pin shouldn't feel broken" state,
+    // rather than always landing on Garden's already-pinned case.
+    const hikersTableId = TABLES[1].id;
+    renderTable(hikersTableId);
+    await waitFor(() => expect(screen.getByText("Weekend Hikers")).toBeInTheDocument());
+
+    expect(screen.getByText(/Nothing pinned yet/)).toBeInTheDocument();
+
+    const messageText = "Made it to the overlook before the fog rolled in. Worth the 6am start.";
+    const card = screen.getByText(messageText).closest("div")!;
+    await userEvent.click(within(card).getByRole("button", { name: "Pin this message" }));
+
+    // "Pinned by" names the pinner (Theo — SELF_AUTHOR_HEX, whoever
+    // clicked the button), not the message's own author (Sequoia).
+    expect(await screen.findByText(/Pinned by Theo/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing pinned yet/)).not.toBeInTheDocument();
+  });
+
   it("shows a real not-found state for an unknown table id", async () => {
     renderTable("table-does-not-exist");
     await waitFor(() =>

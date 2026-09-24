@@ -74,6 +74,7 @@ export function Sticker({
         boxShadow: ring
           ? `0 0 0 2px var(--bg), 0 0 0 ${Math.max(3, size * 0.06)}px var(--accent)`
           : undefined,
+        transition: "box-shadow 0.18s ease-out",
       }}
     >
       <div

@@ -5,7 +5,7 @@
 // Photos/Shared doc.
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, useLocation, Link } from "react-router-dom";
 import { Sticker } from "../components/Sticker";
 import { PinIcon } from "../components/PinIcon";
 import { profileFor, useTable } from "../hooks/useTable";
@@ -17,13 +17,18 @@ import { hasPossibleConflict } from "../lib/docConflict";
 import { resolveSelfAuthorHex } from "../lib/identity";
 import { isPinVisible } from "../lib/mutedPins";
 import { cardStyle, rowCardStyle } from "../lib/cardStyle";
-import { api, type ImageView, type MessageView, type ProfileView, type ProposalView, type TagView } from "../api";
+import { api, PIN_LABEL, type ImageView, type MessageView, type ProfileView, type ProposalView, type TagView } from "../api";
 
 type Tab = "messages" | "decisions" | "photos" | "docs";
 
 export function TableDetail() {
   const { id } = useParams<{ id: string }>();
-  const { loading, table, members, pins, messages, images, proposals, eligibleHex, refreshProposals } =
+  const location = useLocation();
+  // Set by Join.tsx's navigate() right after a successful join — see its
+  // own comment for why this is worth a real arrival moment rather than
+  // the members list just silently being there.
+  const justJoined = Boolean((location.state as { justJoined?: boolean } | null)?.justJoined);
+  const { loading, table, members, pins, messages, images, proposals, eligibleHex, refreshProposals, refreshPins } =
     useTable(id ?? "");
   const [tab, setTab] = useState<Tab>("messages");
 
@@ -107,7 +112,7 @@ export function TableDetail() {
       </div>
 
       {/* Members-first landing — the primary action */}
-      <div style={{ padding: "0 var(--space-xl) var(--space-lg)" }}>
+      <div className={justJoined ? "joined-pop" : undefined} style={{ padding: "0 var(--space-xl) var(--space-lg)" }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
           <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: 0.4 }}>
             Who's here — just us
@@ -131,8 +136,19 @@ export function TableDetail() {
         </div>
       </div>
 
-      {/* Pinned messages */}
-      {visiblePins.length > 0 && (
+      {/* Pinned messages — DESIGN_BRIEF.md §5: "a brand-new Table
+          without a pinned welcome shouldn't feel broken or
+          half-finished." Anyone can pin (tagging.rs's open posture, not
+          founder-only), so the prompt doesn't single anyone out — it's
+          the same line for whoever opens a pin-less Table first. */}
+      {visiblePins.length === 0 ? (
+        <div style={{ padding: "0 var(--space-xl) var(--space-lg)" }}>
+          <p style={{ margin: 0, fontSize: 13, color: "var(--text-3)", fontStyle: "italic" }}>
+            Nothing pinned yet — pin a message below to say what this
+            Table's about.
+          </p>
+        </div>
+      ) : (
         <div style={{ padding: "0 var(--space-xl) var(--space-lg)", display: "flex", flexDirection: "column", gap: 8 }}>
           {visiblePins.map((pin) => {
             const message = messageBySubject.get(pin.subject);
@@ -226,6 +242,7 @@ export function TableDetail() {
                       subject={m.subject}
                       tags={tagsBySubject.get(m.subject) ?? []}
                       onTagged={refreshTags}
+                      onPinned={refreshPins}
                     />
                   </div>
                 );
@@ -301,15 +318,23 @@ function MessageTags({
   subject,
   tags,
   onTagged,
+  onPinned,
 }: {
   tableId: string;
   subject: string;
   tags: TagView[];
   onTagged: () => void;
+  // Pinning is itself just a tag (tagging.rs's PIN_LABEL — SPEC.md's
+  // "tags are monads" note) but a separate callback from onTagged: a
+  // pin also has to refresh useTable's own `pins` state (the top-of-
+  // screen strip), not just the per-message tag list this component
+  // already re-fetches via onTagged.
+  onPinned: () => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [label, setLabel] = useState("");
   const [saving, setSaving] = useState(false);
+  const [pinning, setPinning] = useState(false);
 
   async function submit() {
     const trimmed = label.trim();
@@ -325,6 +350,17 @@ function MessageTags({
     }
   }
 
+  async function pin() {
+    if (pinning) return;
+    setPinning(true);
+    try {
+      await api.addTag(tableId, subject, PIN_LABEL);
+      onPinned();
+    } finally {
+      setPinning(false);
+    }
+  }
+
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
       {tags.map((t) => (
@@ -335,6 +371,14 @@ function MessageTags({
           {`#${t.label}`}
         </span>
       ))}
+      <button
+        onClick={pin}
+        disabled={pinning}
+        aria-label="Pin this message"
+        style={{ background: "none", border: "none", color: "var(--text-3)", fontSize: 11.5, padding: "2px 4px", display: "inline-flex", alignItems: "center", gap: 3, opacity: pinning ? 0.5 : 1 }}
+      >
+        <PinIcon size={10} /> Pin
+      </button>
       {adding ? (
         <span style={{ display: "inline-flex", gap: 4 }}>
           <input
@@ -709,6 +753,7 @@ function DecisionsPanel({
             )}
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
               <span
+                className="status-pill"
                 style={{
                   display: "inline-block",
                   background: "var(--surface-3)",

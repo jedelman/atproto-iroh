@@ -21,6 +21,7 @@ export function StickerPicker({
       {STICKER_IDS.map((id) => (
         <button
           key={id}
+          className="sticker-btn"
           onClick={() => onChange(id)}
           aria-label={`Choose ${id} sticker`}
           aria-pressed={value === id}

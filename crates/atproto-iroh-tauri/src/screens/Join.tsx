@@ -85,7 +85,12 @@ export function Join() {
           // Best-effort — the join itself is what matters here.
         }
       }
-      navigate(`/table/${tableId}`);
+      // DESIGN_BRIEF.md §6: "scan → see the Table's people appear" —
+      // the justJoined flag lets the landing screen give that arrival a
+      // real moment (TableDetail's members strip) rather than the
+      // members list just being there, indistinguishable from opening a
+      // Table you've belonged to for months.
+      navigate(`/table/${tableId}`, { state: { justJoined: true } });
     } catch (err) {
       setJoinError(err instanceof Error ? err.message : String(err));
       setJoining(false);
@@ -112,7 +117,7 @@ export function Join() {
 
       <div style={{ padding: "0 var(--space-xl) var(--space-lg)" }}>
         {status === "scanning" ? (
-          <div style={{ borderRadius: 20, overflow: "hidden", background: "black", position: "relative" }}>
+          <div className="fade-scale-in" style={{ borderRadius: 20, overflow: "hidden", background: "black", position: "relative" }}>
             <video ref={videoRef} playsInline muted style={{ width: "100%", display: "block" }} />
             <button
               onClick={stop}

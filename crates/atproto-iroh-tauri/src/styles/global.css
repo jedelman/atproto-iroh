@@ -37,3 +37,63 @@ a {
 .row-scroll {
   scrollbar-width: none;
 }
+
+/* Motion — DESIGN_BRIEF.md §6/§8: the join flow, sticker-picking, and
+   Decision-status changes are the moments worth real investment;
+   everything else stays a plain, fast color/opacity transition rather
+   than a dedicated animation. Exponential ease-out per the motion
+   reference (real objects decelerate, they don't bounce). */
+.sticker-btn {
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sticker-btn:hover {
+  transform: scale(1.08);
+}
+.sticker-btn:active {
+  transform: scale(0.96);
+}
+
+@keyframes fade-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.fade-scale-in {
+  animation: fade-scale-in 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes joined-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.joined-pop {
+  animation: joined-pop 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.status-pill {
+  transition: background-color 0.3s ease-out, color 0.3s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

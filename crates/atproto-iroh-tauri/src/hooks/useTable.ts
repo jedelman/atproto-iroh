@@ -26,7 +26,9 @@ interface TableState {
   eligibleHex: string[];
 }
 
-export function useTable(tableId: string): TableState & { refreshProposals: () => Promise<void> } {
+export function useTable(
+  tableId: string,
+): TableState & { refreshProposals: () => Promise<void>; refreshPins: () => Promise<void> } {
   const [state, setState] = useState<TableState>({
     loading: true,
     table: null,
@@ -83,7 +85,15 @@ export function useTable(tableId: string): TableState & { refreshProposals: () =
     setState((prev) => ({ ...prev, proposals, eligibleHex: governance.eligible_hex }));
   }, [tableId]);
 
-  return { ...state, refreshProposals };
+  // Same shape as refreshProposals — used after pinning a message so the
+  // Table's pinned-welcome strip reflects the new pin without a full
+  // reload of everything else (messages, images, members).
+  const refreshPins = useCallback(async () => {
+    const pins = await api.pins(tableId);
+    setState((prev) => ({ ...prev, pins }));
+  }, [tableId]);
+
+  return { ...state, refreshProposals, refreshPins };
 }
 
 export function profileFor(members: ProfileView[], authorHex: string): NodeProfile | undefined {
