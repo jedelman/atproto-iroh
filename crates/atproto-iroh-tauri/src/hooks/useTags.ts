@@ -14,48 +14,57 @@
 // reintroduces it: a refresh() that "does nothing" visibly despite the
 // backend call succeeding is the symptom.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type TagView } from "../api";
 import { PIN_LABEL } from "../api/types";
+
+function isSystemLabel(label: string): boolean {
+  return label === PIN_LABEL || label.startsWith("system:");
+}
 
 export function useTags(tableId: string) {
   const [loading, setLoading] = useState(true);
   const [tags, setTags] = useState<TagView[]>([]);
 
+  // A monotonic request id rather than a boolean `cancelled` flag: it
+  // covers both the auto-fetch-on-mount/tableId-change case *and* a
+  // manually-triggered refresh() racing a still-in-flight one, so the
+  // effect can just call refresh() (found duplicating the same fetch
+  // body in a code-review pass) without losing the "don't let a stale
+  // response overwrite a fresher one" guarantee the original mount
+  // effect had.
+  const requestId = useRef(0);
   const refresh = useCallback(async () => {
+    const id = ++requestId.current;
     const all = await api.listAllTags(tableId);
-    setTags(all);
-    setLoading(false);
+    if (id === requestId.current) {
+      setTags(all);
+      setLoading(false);
+    }
   }, [tableId]);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const all = await api.listAllTags(tableId);
-      if (!cancelled) {
-        setTags(all);
-        setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [tableId]);
+    refresh();
+  }, [refresh]);
 
   // system:-prefixed labels (PIN_LABEL and anything else this crate
   // later reserves — tagging.rs's own top doc comment) are built-in
   // behavior, not user ontology — never surfaced as a browsable label.
-  const userLabels = Array.from(
-    new Set(tags.filter((t) => t.label !== PIN_LABEL && !t.label.startsWith("system:")).map((t) => t.label)),
-  ).sort();
+  const userLabels = useMemo(
+    () => Array.from(new Set(tags.filter((t) => !isSystemLabel(t.label)).map((t) => t.label))).sort(),
+    [tags],
+  );
 
-  const tagsBySubject = new Map<string, TagView[]>();
-  for (const t of tags) {
-    if (t.label === PIN_LABEL || t.label.startsWith("system:")) continue;
-    const list = tagsBySubject.get(t.subject) ?? [];
-    list.push(t);
-    tagsBySubject.set(t.subject, list);
-  }
+  const tagsBySubject = useMemo(() => {
+    const map = new Map<string, TagView[]>();
+    for (const t of tags) {
+      if (isSystemLabel(t.label)) continue;
+      const list = map.get(t.subject) ?? [];
+      list.push(t);
+      map.set(t.subject, list);
+    }
+    return map;
+  }, [tags]);
 
   return { loading, tags, userLabels, tagsBySubject, refresh };
 }

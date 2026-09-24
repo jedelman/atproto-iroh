@@ -63,8 +63,10 @@ export function Join() {
       // catch below.
       let alreadyHasProfile = false;
       try {
-        const selfAuthorHex = (await resolveSelfAuthorHex(api)) ?? "";
-        const existing = await api.listProfiles(tableId);
+        const [selfAuthorHex, existing] = await Promise.all([
+          resolveSelfAuthorHex(api).then((hex) => hex ?? ""),
+          api.listProfiles(tableId),
+        ]);
         alreadyHasProfile = existing.some((p) => p.author_hex === selfAuthorHex);
       } catch {
         // Couldn't tell — proceed as if this is a first join.

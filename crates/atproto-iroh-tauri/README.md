@@ -258,6 +258,55 @@ fixes above were written:**
   again with a different draft, assert the original survives, all
   within the one test.
 
+**A `/simplify` pass (2026-09-24) — not a bug hunt, a code-quality pass**
+(reuse, simplification, efficiency, altitude, via four parallel review
+agents against the diff), run after the three code-review rounds above
+were already clean. Real duplication and inefficiency found and fixed,
+none of it a correctness bug:
+- **`PinIcon` and the pin-visibility filter were each defined twice**
+  (Feed.tsx and TableDetail.tsx independently) — extracted to
+  `components/PinIcon.tsx` and `lib/mutedPins.ts` (`isPinVisible`).
+- **`findMessageBySubject`** extracted to `lib/feedMessages.ts`,
+  replacing Feed's inline `pinExcerpt()` scan.
+- **The "resolve self author hex, in state, cancel-safe on unmount"
+  effect was duplicated between Feed's header and DecisionsPanel** —
+  extracted to a shared `hooks/useSelfAuthorHex.ts`.
+- **`useTags.ts`/`useTableDoc.ts` each duplicated their own mount-effect
+  body and (`useTags.ts` only) an inline `isSystemLabel` check** written
+  twice in the same file — deduped, and both hooks' `cancelled`-flag
+  pattern replaced with a monotonic `requestId` ref so a manual
+  `refresh()` call is race-safe too, not just the mount effect.
+- **`resolveSelfAuthorHex` (`lib/identity.ts`) re-resolved `nodeDid()`
+  on every call**, including from hooks now called in more places after
+  the dedup above — added `WeakMap`-keyed memoization (keyed by the
+  `api` object's identity, not a module-level singleton, so tests don't
+  leak state across files).
+- **`Join.tsx`/`ProfileEdit.tsx` awaited `resolveSelfAuthorHex` and
+  `listProfiles` sequentially** despite being independent calls —
+  switched to `Promise.all`.
+- **`ProfileEdit.tsx`'s six separate `useState` fields** (name,
+  category, avatar, neighborhood, description, governanceEligible) —
+  always read together on save and always set together on load —
+  consolidated into one `ProfileForm` object.
+- **The sticker-picker grid (4-column grid of `STICKER_IDS` as
+  selectable buttons) was duplicated between Onboarding and
+  ProfileEdit**, differing only in size/gap — extracted to
+  `components/StickerPicker.tsx`.
+
+Skipped, with reasoning rather than silently dropped: a generic
+`useAsyncEffect` to unify the several remaining cancelled-flag fetch
+effects elsewhere (judged too invasive to apply blindly); a shared
+`cardStyle` object for the many inline card styles (cosmetic-risk, out
+of scope for a non-visual pass); a shared cache between `useFeed` and
+`useTable` to avoid re-fetching on Feed→Table navigation (real
+architectural change, not a local fix); generalizing `mockClient.ts`'s
+`signalDecision` beyond its current block-only special case (no UI
+exercises the general case yet — would be speculative); deduping the
+rkey zero-padding logic reimplemented across `mockClient.ts`/
+`fixtures.ts`/`docConflict.test.ts` (two of the three sites are test
+fixtures, not production code — the agent that raised it called its own
+finding weak).
+
 **Screenshot-verified, not just test-verified** — a real Playwright +
 headless-Chromium pipeline against `npm run dev`'s mock-backed browser
 session caught three real bugs the type-checker and the test suite both

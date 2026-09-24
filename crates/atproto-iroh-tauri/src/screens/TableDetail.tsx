@@ -7,12 +7,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Sticker } from "../components/Sticker";
+import { PinIcon } from "../components/PinIcon";
 import { profileFor, useTable } from "../hooks/useTable";
 import { TABLE_DOC_ID, useTableDoc } from "../hooks/useTableDoc";
 import { useTags } from "../hooks/useTags";
 import { useMutedAuthors } from "../hooks/useMutedAuthors";
+import { useSelfAuthorHex } from "../hooks/useSelfAuthorHex";
 import { hasPossibleConflict } from "../lib/docConflict";
 import { resolveSelfAuthorHex } from "../lib/identity";
+import { isPinVisible } from "../lib/mutedPins";
 import { api, type ImageView, type MessageView, type ProfileView, type ProposalView, type TagView } from "../api";
 
 type Tab = "messages" | "decisions" | "photos" | "docs";
@@ -45,11 +48,9 @@ export function TableDetail() {
   // content was correctly hidden from the Messages tab below.
   const visiblePins = useMemo(
     () =>
-      pins.filter((pin) => {
-        if (mutedAuthors.has(pin.author_hex)) return false;
-        const message = messageBySubject.get(pin.subject);
-        return !message || !mutedAuthors.has(message.author_hex);
-      }),
+      pins.filter((pin) =>
+        isPinVisible(pin, (subject) => messageBySubject.get(subject)?.author_hex, mutedAuthors),
+      ),
     [pins, messageBySubject, mutedAuthors],
   );
   const allImages = useMemo(
@@ -141,7 +142,7 @@ export function TableDetail() {
                 style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: "12px 16px" }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                  <PinIcon />
+                  <PinIcon size={11} />
                   <span style={{ fontSize: 11.5, color: "var(--accent)", fontWeight: 600 }}>
                     Pinned by {author?.name ?? "someone"}
                   </span>
@@ -603,17 +604,11 @@ function DecisionsPanel({
   eligibleHex: string[];
   onChanged: () => void;
 }) {
-  const [selfAuthorHex, setSelfAuthorHex] = useState<string | null>(null);
+  const selfAuthorHex = useSelfAuthorHex();
   const [title, setTitle] = useState("");
   const [deadlineHours, setDeadlineHours] = useState(72);
   const [creating, setCreating] = useState(false);
   const [voting, setVoting] = useState<string | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      setSelfAuthorHex(await resolveSelfAuthorHex(api));
-    })();
-  }, []);
 
   const canWeighIn = selfAuthorHex !== null && eligibleHex.includes(selfAuthorHex);
 
@@ -903,10 +898,3 @@ function EmptyTab({ text }: { text: string }) {
   return <p style={{ color: "var(--text-3)", fontSize: 13.5, textAlign: "center", padding: "var(--space-2xl) 0" }}>{text}</p>;
 }
 
-function PinIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--accent)">
-      <path d="M12 2l1.6 5.1L19 8l-4 3.6.9 5.4-3.9-2.6-3.9 2.6.9-5.4-4-3.6 5.4-.9z" />
-    </svg>
-  );
-}

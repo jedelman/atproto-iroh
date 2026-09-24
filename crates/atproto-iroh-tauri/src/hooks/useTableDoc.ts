@@ -3,7 +3,7 @@
 // yet — a real, named gap, not an oversight): every Table has exactly
 // one shared doc, "notes".
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type DocRevision } from "../api";
 
 export const TABLE_DOC_ID = "notes";
@@ -16,21 +16,21 @@ interface TableDocState {
 export function useTableDoc(tableId: string): TableDocState & { refresh: () => Promise<void> } {
   const [state, setState] = useState<TableDocState>({ loading: true, revisions: [] });
 
+  // Same monotonic-request-id pattern as useTags.ts — lets the mount
+  // effect just call refresh() (found duplicating the same fetch body
+  // in a code-review pass) without losing the "a stale response can't
+  // overwrite a fresher one" guarantee a boolean `cancelled` flag would
+  // only have covered for the mount case, not a manual refresh() too.
+  const requestId = useRef(0);
   const refresh = useCallback(async () => {
+    const id = ++requestId.current;
     const revisions = await api.docHistory(tableId, TABLE_DOC_ID);
-    setState({ loading: false, revisions });
+    if (id === requestId.current) setState({ loading: false, revisions });
   }, [tableId]);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const revisions = await api.docHistory(tableId, TABLE_DOC_ID);
-      if (!cancelled) setState({ loading: false, revisions });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [tableId]);
+    refresh();
+  }, [refresh]);
 
   return { ...state, refresh };
 }

@@ -8,7 +8,8 @@
 
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { Sticker, STICKER_IDS, type StickerId } from "../components/Sticker";
+import { Sticker, type StickerId } from "../components/Sticker";
+import { StickerPicker } from "../components/StickerPicker";
 import { api, type NodeCategory, type NodeProfile } from "../api";
 import { resolveSelfAuthorHex } from "../lib/identity";
 
@@ -26,34 +27,54 @@ export function ProfileEdit() {
   const { id } = useParams<{ id: string }>();
   const tableId = id ?? "";
 
+  // One object rather than six separate useState fields (name,
+  // category, avatar, neighborhood, description, governanceEligible) —
+  // found in a code-review pass: all six were always read together on
+  // save() and always set together in the load effect below, the
+  // copy-paste-with-variation pattern applied to state declarations
+  // rather than JSX.
+  interface ProfileForm {
+    name: string;
+    category: NodeCategory;
+    avatar: StickerId;
+    neighborhood: string;
+    description: string;
+    // Not editable here — see the comment on the `save()` call below
+    // for why this form doesn't expose it, but a Save still shouldn't
+    // erase whatever value was already on the synced profile (e.g. a
+    // founder's `Some(true)` from create_namespace_with_profile).
+    governanceEligible: boolean | null;
+  }
+  const [form, setForm] = useState<ProfileForm>({
+    name: "",
+    category: "individual",
+    avatar: "accent",
+    neighborhood: "",
+    description: "",
+    governanceEligible: null,
+  });
   const [loading, setLoading] = useState(true);
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState<NodeCategory>("individual");
-  const [avatar, setAvatar] = useState<StickerId>("accent");
-  const [neighborhood, setNeighborhood] = useState("");
-  const [description, setDescription] = useState("");
-  // Not editable here — see the comment on the `save()` call below for
-  // why this form doesn't expose it, but a Save still shouldn't erase
-  // whatever value was already on the synced profile (e.g. a founder's
-  // `Some(true)` from create_namespace_with_profile).
-  const [governanceEligible, setGovernanceEligible] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const selfAuthorHex = (await resolveSelfAuthorHex(api)) ?? "";
-      const profiles = await api.listProfiles(tableId);
+      const [selfAuthorHex, profiles] = await Promise.all([
+        resolveSelfAuthorHex(api).then((hex) => hex ?? ""),
+        api.listProfiles(tableId),
+      ]);
       const mine = profiles.find((p) => p.author_hex === selfAuthorHex)?.profile;
       if (cancelled) return;
       if (mine) {
-        setName(mine.name);
-        setCategory(mine.category);
-        setAvatar((mine.avatar as StickerId) ?? "accent");
-        setNeighborhood(mine.neighborhood ?? "");
-        setDescription(mine.description ?? "");
-        setGovernanceEligible(mine.governance_eligible ?? null);
+        setForm({
+          name: mine.name,
+          category: mine.category,
+          avatar: (mine.avatar as StickerId) ?? "accent",
+          neighborhood: mine.neighborhood ?? "",
+          description: mine.description ?? "",
+          governanceEligible: mine.governance_eligible ?? null,
+        });
       }
       setLoading(false);
     })();
@@ -63,22 +84,22 @@ export function ProfileEdit() {
   }, [tableId]);
 
   async function save() {
-    if (!name.trim() || saving) return;
+    if (!form.name.trim() || saving) return;
     setSaving(true);
     setSaved(false);
     try {
       const profile: Omit<NodeProfile, "created_at"> = {
-        name: name.trim(),
-        category,
-        avatar,
-        neighborhood: neighborhood.trim() || null,
-        description: description.trim() || null,
+        name: form.name.trim(),
+        category: form.category,
+        avatar: form.avatar,
+        neighborhood: form.neighborhood.trim() || null,
+        description: form.description.trim() || null,
         // Round-tripped, not editable from this form — see the field's
         // own comment above. Real decision eligibility comes only from
         // a synced Founding claim or a ratified AdmitCoSigner proposal
         // (fold::fold_namespace), which this field plays no part in
         // despite the name; a checkbox here used to imply otherwise.
-        governance_eligible: governanceEligible,
+        governance_eligible: form.governanceEligible,
       };
       await api.updateProfile(tableId, profile);
       setSaved(true);
@@ -107,30 +128,20 @@ export function ProfileEdit() {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "6px 0 18px" }}>
-        <Sticker id={avatar} size={72} />
+        <Sticker id={form.avatar} size={72} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 14, padding: "0 var(--space-xl) 20px" }}>
-        {STICKER_IDS.map((sid) => (
-          <button
-            key={sid}
-            onClick={() => setAvatar(sid)}
-            aria-label={`Choose ${sid} sticker`}
-            aria-pressed={avatar === sid}
-            style={{ background: "none", border: "none", padding: 0, display: "flex", justifyContent: "center" }}
-          >
-            <Sticker id={sid} size={44} ring={avatar === sid} />
-          </button>
-        ))}
+      <div style={{ padding: "0 var(--space-xl) 20px" }}>
+        <StickerPicker value={form.avatar} onChange={(avatar) => setForm((f) => ({ ...f, avatar }))} />
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: "0 var(--space-xl) var(--space-xl)" }}>
         <Field label="Name">
-          <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} />
+          <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={inputStyle} />
         </Field>
 
         <Field label="Category">
-          <select value={category} onChange={(e) => setCategory(e.target.value as NodeCategory)} style={inputStyle}>
+          <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value as NodeCategory }))} style={inputStyle}>
             {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
@@ -140,17 +151,17 @@ export function ProfileEdit() {
         </Field>
 
         <Field label="Neighborhood (optional)">
-          <input value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} style={inputStyle} />
+          <input value={form.neighborhood} onChange={(e) => setForm((f) => ({ ...f, neighborhood: e.target.value }))} style={inputStyle} />
         </Field>
 
         <Field label="About you (optional)">
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
+          <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
         </Field>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
           <button
             onClick={save}
-            disabled={!name.trim() || saving}
+            disabled={!form.name.trim() || saving}
             style={{
               background: "var(--accent)",
               color: "var(--ink)",
@@ -159,7 +170,7 @@ export function ProfileEdit() {
               padding: "11px 20px",
               fontSize: 14.5,
               fontWeight: 700,
-              opacity: !name.trim() || saving ? 0.5 : 1,
+              opacity: !form.name.trim() || saving ? 0.5 : 1,
             }}
           >
             {saving ? "Saving…" : "Save"}

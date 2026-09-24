@@ -4,14 +4,16 @@
 // Primary user action (§2): the top-of-screen strip answers "these are
 // your people, this is just us" before the feed itself.
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Sticker } from "../components/Sticker";
-import { api } from "../api";
+import { PinIcon } from "../components/PinIcon";
 import { useFeed, type FeedItem } from "../hooks/useFeed";
 import { useMutedAuthors } from "../hooks/useMutedAuthors";
+import { useSelfAuthorHex } from "../hooks/useSelfAuthorHex";
 import { parseRecordRef } from "../lib/recordRef";
-import { resolveSelfAuthorHex } from "../lib/identity";
+import { isPinVisible } from "../lib/mutedPins";
+import { findMessageBySubject } from "../lib/feedMessages";
 
 function itemAuthorHex(item: FeedItem): string {
   switch (item.kind) {
@@ -49,19 +51,8 @@ export function Feed() {
   // to be first in profilesByAuthor's insertion order (async fetch
   // completion order across every Table) rather than the viewer's own
   // profile — a user in several Tables would typically see a random
-  // other member's sticker as their own account icon. Resolved the
-  // same way Composer/DecisionsPanel/ProfileEdit already do.
-  const [selfAuthorHex, setSelfAuthorHex] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const hex = await resolveSelfAuthorHex(api);
-      if (!cancelled) setSelfAuthorHex(hex);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // other member's sticker as their own account icon.
+  const selfAuthorHex = useSelfAuthorHex();
 
   const visibleItems = useMemo(() => {
     const unmuted = items.filter((i) => !mutedAuthors.has(itemAuthorHex(i)));
@@ -80,9 +71,9 @@ export function Feed() {
     let best: { tableId: string; tag: (typeof pinsByTable)[string][number] } | null = null;
     for (const [tableId, tablePins] of Object.entries(pinsByTable)) {
       for (const tag of tablePins) {
-        if (mutedAuthors.has(tag.author_hex)) continue;
-        const message = items.find((i) => i.kind === "message" && i.message.subject === tag.subject);
-        if (message && message.kind === "message" && mutedAuthors.has(message.message.author_hex)) continue;
+        if (!isPinVisible(tag, (subject) => findMessageBySubject(items, subject)?.author_hex, mutedAuthors)) {
+          continue;
+        }
         if (!best || tag.rkey > best.tag.rkey) best = { tableId, tag };
       }
     }
@@ -232,23 +223,12 @@ export function Feed() {
             key={item.id}
             item={item}
             tableName={tableName(tables, item.tableId)}
-            profile={profilesByAuthor[authorOf(item)]}
+            profile={profilesByAuthor[itemAuthorHex(item)]}
           />
         ))}
       </div>
     </div>
   );
-}
-
-function authorOf(item: FeedItem): string {
-  switch (item.kind) {
-    case "message":
-      return item.message.author_hex;
-    case "photo":
-      return item.image.author_hex;
-    case "decision":
-      return item.proposal.author_hex;
-  }
 }
 
 function tableName(tables: { id: string; name: string }[], id: string): string {
@@ -268,11 +248,7 @@ function tableAvatar(tableId: string): string {
 function pinExcerpt(items: FeedItem[], subject: string): string {
   const parsed = parseRecordRef(subject);
   if (!parsed) return subject;
-  const match = items.find(
-    (i) => i.kind === "message" && i.message.subject === subject,
-  );
-  if (match && match.kind === "message") return match.message.text;
-  return "(pinned)";
+  return findMessageBySubject(items, subject)?.text ?? "(pinned)";
 }
 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -294,14 +270,6 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
     >
       {children}
     </button>
-  );
-}
-
-function PinIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--accent)">
-      <path d="M12 2l1.6 5.1L19 8l-4 3.6.9 5.4-3.9-2.6-3.9 2.6.9-5.4-4-3.6 5.4-.9z" />
-    </svg>
   );
 }
 

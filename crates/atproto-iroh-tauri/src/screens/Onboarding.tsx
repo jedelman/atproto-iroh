@@ -9,7 +9,8 @@
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sticker, STICKER_IDS, type StickerId } from "../components/Sticker";
+import { Sticker, type StickerId } from "../components/Sticker";
+import { StickerPicker } from "../components/StickerPicker";
 import { useProfileDraft } from "../hooks/useProfileDraft";
 
 export function Onboarding() {
@@ -74,19 +75,7 @@ export function Onboarding() {
       </div>
 
       <div style={{ flexGrow: 1, overflowY: "auto", padding: "14px var(--space-xl) var(--space-sm)" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 16 }}>
-          {STICKER_IDS.map((id) => (
-            <button
-              key={id}
-              onClick={() => setAvatar(id)}
-              aria-label={`Choose ${id} sticker`}
-              aria-pressed={avatar === id}
-              style={{ background: "none", border: "none", padding: 0, display: "flex", justifyContent: "center" }}
-            >
-              <Sticker id={id} size={60} ring={avatar === id} />
-            </button>
-          ))}
-        </div>
+        <StickerPicker value={avatar} onChange={setAvatar} size={60} gap={16} />
       </div>
 
       <div style={{ padding: "16px var(--space-xl) var(--space-xl)" }}>
