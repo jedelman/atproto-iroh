@@ -1,0 +1,35 @@
+{
+  "lexicon": 1,
+  "id": "network.essmesh.chat.image",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Metadata for an image uploaded into a namespace. The raw bytes are NOT embedded in this record -- they live at a sibling freeform key (no lexicon, network.essmesh.chat.image.blob/{rkey}) sharing this record's own rkey, written via namespace::put_bytes rather than a separate out-of-band blob-add API. That choice matters: iroh-docs already transfers a doc entry's content blob alongside its metadata as part of ordinary sync, the same mechanism every other record in this design relies on -- so an image needs no new sync primitive, no separate 'now go fetch this blob by hash from a peer' step. Splitting metadata from bytes keeps a gallery listing cheap: reading every ImageMeta in a namespace never means downloading every image in it.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["contentType", "len", "createdAt"],
+        "properties": {
+          "contentType": {
+            "type": "string",
+            "description": "e.g. 'image/png'. Not validated against a fixed list -- a reader that doesn't understand a given type can still show the caption and skip rendering."
+          },
+          "len": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Byte length of the image content at the sibling blob key."
+          },
+          "caption": {
+            "type": "string",
+            "maxLength": 1000,
+            "maxGraphemes": 300
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

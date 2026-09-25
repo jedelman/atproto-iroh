@@ -1,18 +1,24 @@
 # atproto-iroh — atproto's data model over iroh's transport
 #
-# Workspace structure (currently minimal on purpose — see CLAUDE.md and
-# SPEC.md §6: the real crate boundaries depend on answers to unvalidated
-# iroh-docs questions this design hasn't checked yet):
-#   atproto-iroh-core — stub, not yet real. Will hold identity (did:iroh),
-#                        lexicon-typed record handling, and the repo/sync
-#                        primitives from SPEC.md §3.2-3.4 once those are
-#                        validated against the real iroh-docs API rather
-#                        than assumed from the spec as written.
+# Workspace structure — no longer the placeholder CLAUDE.md's earlier
+# text described. See CLAUDE.md's "Status" and "Client" sections for the
+# current, accurate picture:
+#   atproto-iroh-core  — real: identity (did:iroh), namespace/capability
+#                        wrapper over iroh-docs, governance (objection-
+#                        window ratification, folded over real sync),
+#                        mute. Headless — no UI dependency of any kind.
+#   atproto-iroh-tauri — the reference client (CLAUDE.md's "Client"
+#                        section), embedding atproto-iroh-core directly.
+#                        Scaffolded, unverified to actually build in a
+#                        headless environment without GTK/WebKit system
+#                        libraries — see its own README.
 
 [workspace]
 resolver = "2"
 members = [
     "crates/atproto-iroh-core",
+    "crates/atproto-iroh-tauri/src-tauri",
+    "crates/atproto-iroh-cli",
 ]
 
 [workspace.package]
@@ -21,3 +27,15 @@ edition = "2021"
 license = "MIT"
 authors = ["Jason Edelman <edelmanja@gmail.com>"]
 repository = "https://github.com/jedelman/atproto-iroh"
+
+# Release is the default build here — CLAUDE.md's Observability section:
+# Jason usually has no debugger attached, so unstripped debug symbols in
+# a shipped binary are pure size cost, not a diagnostic aid he'll reach
+# for. Found live: an unstripped release .so per Android ABI ran
+# 28-42MB, ballooning a universal APK to 155MB; stripping is the
+# concrete fix, not just a nice-to-have.
+[profile.release]
+strip = true
+lto = true
+opt-level = "z"
+codegen-units = 1

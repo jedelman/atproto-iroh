@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "One member's response to a network.essmesh.governance.proposal record. See ESS_MESH_SPEC.md 3.9 -- an ordinary signed record from the member's own individual key, never a threshold or aggregated operation. A Proposal becomes a de facto Ratification purely by count: N distinct, valid 'consent' Signals referencing it, no separate record or signature required to mark that. 'exit' is the one type with a defined mechanical effect beyond information -- see ESS_MESH_SPEC.md 3.8's fission discussion.",
+      "description": "One member's response to a network.essmesh.governance.proposal record. See ESS_MESH_SPEC.md 3.7.2/3.9 -- an ordinary signed record from the member's own individual key, never a threshold or aggregated operation. Revised: a Proposal becomes a de facto Ratification by default once its deadline passes, UNLESS enough 'block' Signals reference it to meet the Proposal's class's current threshold -- no separate record or signature required to mark that either way. 'consent' is social affirmation with no counting power under this revision (see this file's signalType note and SPEC.md 3.9's superseded-text note for the pre-revision rule, kept for the record). 'exit' is the one type with a defined mechanical effect beyond information -- see ESS_MESH_SPEC.md 3.8's fission discussion.",
       "key": "tid",
       "record": {
         "type": "object",
@@ -13,12 +13,12 @@
           "subject": {
             "type": "ref",
             "ref": "com.atproto.repo.strongRef",
-            "description": "AT-URI + CID of the network.essmesh.governance.proposal record this responds to. Pinning the CID, not just the URI, means a Signal is unambiguous about exactly which version of a Proposal it consented to, even if the author edited it after some members already signaled -- an edit produces a new record version a stale Signal doesn't cover."
+            "description": "AT-URI + CID of the network.essmesh.governance.proposal record this responds to. Pinning the CID, not just the URI, means a Signal is unambiguous about exactly which version of a Proposal it consented to, even if the author edited it after some members already signaled -- an edit produces a new record version a stale Signal doesn't cover. Known scaffold deviation, not yet closed: crates/atproto-iroh-core's governance.rs doesn't yet construct real strongRefs (no CID computation, no AT-URI resolution wired up) -- it uses a plain '{authorHex}/{rkey}' string as a stand-in, documented in that module and in this repo's own type, not silently different from what this lexicon actually specifies."
           },
           "signalType": {
             "type": "string",
             "knownValues": ["consent", "stand_aside", "block", "abstain", "exit"],
-            "description": "This is not yes/no by design -- see ESS_MESH_SPEC.md 3.9 on why collapsing it would be a regression. 'consent' is the only type that counts toward a Ratification threshold. 'block' has no cryptographic effect of its own (ESS_MESH_SPEC.md 3.9's 'What a block Signal actually does, and doesn't do') -- it's a social fact an honest client is expected to honor by refusing to act on the Proposal, not something this schema can enforce. 'exit' shrinks the effective governance-eligible roster per ESS_MESH_SPEC.md 3.8, independent of whichever Proposal it's attached to -- an exit is about the signaler's own standing, not a response to that specific proposal's content."
+            "description": "This is not yes/no by design -- see ESS_MESH_SPEC.md 3.9 on why collapsing it would be a regression. Revised (3.7.2): 'block' is the only type that counts toward stopping a Ratification -- a Proposal ratifies by default absent enough of them, so 'consent' carries no mechanical power, only social/recorded affirmation. 'block' has no cryptographic effect of its own (ESS_MESH_SPEC.md 3.9's 'What a block Signal actually does, and doesn't do') -- it's a social fact an honest client is expected to honor by refusing to act on a Proposal that closed with unresolved blocks at or above its threshold, not something this schema can enforce. 'exit' shrinks the pool of members whose blocks count toward future Proposals' thresholds, per ESS_MESH_SPEC.md 3.8, independent of whichever Proposal it's attached to -- an exit is about the signaler's own standing, not a response to that specific proposal's content."
           },
           "text": {
             "type": "string",

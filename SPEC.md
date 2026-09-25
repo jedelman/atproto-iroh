@@ -113,12 +113,104 @@ which only works if you already have a route to it — identity and
 reachability stay collapsed into the same trust boundary, unchanged by
 this revision.
 
-### 3.3 Data: each member has an ordinary repo; a node is a namespace, not
+### 3.3 Data: a repo is optional per member; a node is a namespace, not
 a repo
+
+**Revision — the repo is no longer assumed mandatory, and namespace
+entries do not mirror it.** The original framing below ("each member has
+an ordinary repo") silently assumed two things that turned out to need
+separating: that everyone maintains a persistent MST repo, and that a
+namespace's iroh-docs entries are somehow derived from or kept in sync
+with that repo. Neither survives scrutiny:
+
+- **Namespace entries are independently, deliberately published — never
+  an automatic mirror of repo content.** The alternative (an entry in a
+  namespace being a copy of, or kept in sync with, something in your MST
+  repo) was checked against this document's own priority-1 goals and
+  loses on all three: it requires new propagation machinery (either you
+  run it, or a peer runs it "on your behalf," reopening exactly the trust
+  question §3.7.5 exists to avoid); it breaks tiered disclosure (§2 goal
+  3) unless you build a selective-mirroring filter on top, which is
+  disclosure control *bolted on*, the thing goal 3 explicitly rejects;
+  and it multiplies the scrubbing surface of anything you want to retract
+  — instead of "the namespaces I chose to publish this into" (small,
+  explicit, enumerable), it becomes "the repo, plus every namespace that
+  happened to mirror it, including ones I may have forgotten I'm in."
+  Deliberate per-namespace publishing is also the reading already
+  consistent with the rest of this section — "no single canonical
+  'Eleanor's says X' statement" (below) presupposes there's no canonical
+  upstream copy other copies are tracking, which an automatic mirror
+  would quietly contradict.
+- **A persistent MST repo is therefore optional, not required, for
+  namespace-only participation.** The only reason to keep it at all is
+  cross-transport compatibility with the wider atproto ecosystem (see the
+  bridge discussion below) — and that turns out to be available more
+  cheaply than "maintain a repo" implies. What actually carries
+  compatibility is lexicon- and MST-shaped *records*, not the standing
+  existence of a repo object. Someone who only ever publishes into
+  namespaces, with no ambition to ever be reachable from Bluesky-adjacent
+  tooling, doesn't need a repo at all — consistent with goal 5's
+  zero-labor publishing, which a mandatory second persistent data
+  structure per member actively worked against.
+
+**Cross-transport compatibility with the wider atproto ecosystem is
+real but bounded, and only reachable through an explicit, opt-in
+bridge — never a core protocol feature.** Split into what's actually two
+different claims:
+
+- *Data-shape compatibility is already free.* Goal 4's reuse of MST +
+  lexicons means anything published here, if extracted, is already a
+  valid atproto record — same signing, same tree structure. No further
+  design work buys this; it's a consequence of decisions already made.
+- *Live-network compatibility — resolvable by existing atproto tooling,
+  crawlable by a relay, indexed by an AppView, found by a Bluesky client
+  — is not reachable from inside this design at all, and isn't a gap to
+  close so much as the direct expression of the tension §2 already
+  names.* Two independent walls: (1) `did:iroh` isn't a DID method any
+  existing resolver knows how to fetch — not a missing feature, a
+  missing entry in every other implementation's method table, which
+  isn't this document's to add unilaterally; (2) real interop requires
+  answering `com.atproto.sync.getRepo`/`subscribeRepos` on a public
+  surface a relay can crawl — which *is* the firehose goal 1 defines
+  itself against. You cannot expose that surface without becoming
+  exactly the public-by-default thing this design opted out of.
+- *The only feasible shape is a deliberate bridge*: a **separate**
+  `did:plc` or `did:web` identity (never the `did:iroh` one wearing a
+  costume — the methods can't be dual-homed) running an ordinary,
+  minimal PDS-shaped service, which republishes specifically whatever
+  records someone chooses to push through it — the same
+  deliberate-per-record posture as namespace publishing, applied at the
+  ecosystem boundary instead of the repo/namespace one, for the identical
+  reason. Anything sent through the bridge becomes exactly as public,
+  crawlable, and permanent as any ordinary atproto/Bluesky post the
+  moment it crosses — a real, one-way privacy trade accepted per-record,
+  not a property of the protocol. This was always the intended shape of
+  a future private↔public sync path, not a discovery made under
+  pressure; see §6 for what's still unbuilt.
+
+**Implication worth stating plainly: this architecture, run entirely
+within its own boundary with no bridge at all, is a local, private,
+offline-capable Bluesky-shaped substrate** — same record model
+(lexicon-typed, MST-signed), same repo format if someone chooses to keep
+one, but direct capability-scoped peer sync instead of
+PDS→relay→firehose, and tiered disclosure native rather than "public by
+default, DM as the exception." What it does *not* yet have, and what
+distinguishes "the data model Bluesky uses" from "a thing that behaves
+like Bluesky," is a social-interaction lexicon set (post/like/repost/
+follow/thread — this document has only ever drafted the ESS-specific
+`node.profile`/`node.event`/governance schemas) and, more structurally, a
+**feed/timeline construction layer**. Bluesky's AppView computes that
+server-side, over the whole public firehose; nothing here has a
+server-side anything, so timeline construction would have to happen
+locally, on each reader's own node, over whatever repos and namespaces
+they currently hold capabilities into. That's a real, distinct piece of
+design work, not a footnote — tracked as a new item in §6.
 
 Each member runs (or has hosted on their behalf — see §3.7) one ordinary,
 single-key-signed MST repo — the standard atproto shape, nothing new,
-nothing collectively owned. Records use lexicon collections,
+nothing collectively owned; a member who never intends to bridge to the
+wider ecosystem may not need one at all, per the revision above. Records
+use lexicon collections,
 `network.essmesh.node.profile` and `network.essmesh.node.event`, drafted
 in full at `lexicons/network/essmesh/node/` — real schema, not a
 placeholder, though not yet validated against live atproto tooling (see
@@ -194,6 +286,104 @@ side-by-side and individually attributed as §3.3 already described. **One
 is the mechanism** — simpler than the previous revision's gossip/backfill
 split, and the objection to it doesn't survive close reading of what
 `iroh-docs` actually converges on.
+
+**Validated against the real crate (`iroh-docs` 0.101.0), not assumed.**
+`crates/atproto-iroh-core/examples/iroh_docs_probe.rs` is the throwaway
+experiment CLAUDE.md called for: two real in-process nodes, real QUIC
+sync, no mocking. Three findings, one of them a correction to this
+section rather than a confirmation of it.
+
+*Confirmed, and sharper than stated above.* Convergence doesn't merely
+happen to resolve "per key" as a policy — it's structural.
+`RecordIdentifier` (`iroh_docs::sync::RecordIdentifier`) is the compound
+key `(namespace, author, key)`, not `(namespace, key)`. Two different
+authors writing the literal same key string never contend for one slot at
+all; they're different identifiers from the store's point of view, and a
+query returns both, independently, forever. There is no merge decision to
+have an opinion about. Live: author A and author B both wrote
+`"shared-key"` on one node; after sync, the other node read back both
+entries under that key, distinctly attributed, byte-identical to what
+each author wrote. The "resolves per key" framing above is correct in
+effect but undersells it — it reads like a convergence *rule* the design
+is relying on, when it's actually a consequence of what the identifier
+*is*. Only true same-author-same-key writes ever compete, resolved by
+`Record`'s own `Ord` (timestamp, then hash) — which is the only case
+where "current version of this member's own record" as stated above
+actually needs a tiebreak.
+
+*Confirmed.* §6.10's question, whether granting access syncs full history
+or only future writes: full history. Three entries were written and
+committed on node0 *before* node1 ever received a ticket for the
+namespace. After node1 imported the ticket and synced, it had all three,
+unprompted — set reconciliation between two peers converges on the whole
+replica state each holds, not a subscription to a tail. New-member access
+never needed a separate backfill mechanism because sync was never an
+event-log tail to begin with.
+
+**Not confirmed, and this is the one worth stopping on: "write(peer →
+namespace)" is not the edge this paragraph's "directly, mechanically
+checkable" claim needs it to be.** §3.4 frames membership as "does X
+currently hold a write edge," implying a per-peer, individually
+grantable and revocable credential — precisely what §3.2's identity
+correction and §3.7.2's single-point-of-capture worry both assume is
+possible to build. Reading `iroh_docs::sync::Capability` (`keys.rs`,
+`sync.rs`) says otherwise: `Capability::Write` wraps exactly one
+`NamespaceSecret` — **the same 32 bytes for the entire namespace, held
+identically by every writer.** There is no per-peer write credential
+anywhere in the crate. What *is* per-peer is the `Author` keypair used to
+*sign entries* — which is who gets credited for a given record — but
+authoring is gated by holding the shared namespace secret, not by
+anything tied to a specific `Author`. Concretely: anyone who has ever
+been handed the `Write` ticket can create entries under *any* `Author`
+key they generate, including a fresh, previously-unseen one — the crate
+has no notion of "this Author is bound to this credential-holder" to
+enforce. Two consequences that reach back into earlier sections:
+
+- **§3.7.1's "capabilities expire by default, short-lived, self-expiring"
+  has no home in the crate.** A `NamespaceSecret` doesn't expire, doesn't
+  carry a validity window, and isn't scoped to a peer. Self-expiry would
+  have to be an application-level convention layered on top (e.g.,
+  rotating to a fresh namespace on a schedule and re-inviting current
+  holders) — real, buildable, but not a crate primitive, and rotation is
+  an all-holders event, not a single-peer one.
+- **Per-peer write revocation isn't a crate operation.** Because every
+  writer holds literally the same secret, there is no "revoke Bob's write
+  edge" — only "rotate the namespace secret and redistribute it to
+  everyone *except* Bob," which is indistinguishable, from the crate's
+  point of view, from kicking out the whole membership and re-admitting
+  most of it. §3.7's governance layer (counted `consent` signals,
+  §3.7.2–3.7.4) can *decide* to revoke someone; it just can't express
+  that decision as a capability-layer operation the way §3.4's "does X
+  hold a write edge" phrasing implies. Enforcement has to happen where
+  the governance record lives and gets read — readers who honor a
+  `governance` collection's revocation record can choose to stop
+  accepting that Author's entries as legitimate, but nothing stops the
+  revoked peer from continuing to write with the (unrotated) secret; it
+  only stops good-faith readers from counting those writes. That's a
+  materially weaker guarantee than "revoked" suggests, and worth being
+  explicit about rather than letting the edge-graph language imply
+  cryptographic enforcement iroh-docs doesn't provide.
+
+Read capability (`Capability::Read(NamespaceId)`) is even thinner: the
+`NamespaceId` is the document's own public identifier, not a secret at
+all. "Granting read access" is really "telling someone the ID and how to
+reach a peer holding it" (a `DocTicket`) — there's nothing to revoke,
+because there was never a credential, only knowledge plus reachability.
+Once synced, a peer keeps whatever it already received regardless of
+anything happening on the write side afterward.
+
+None of this breaks the design — §3.7.4 already put the actual
+accountability mechanism in the right place (signed `consent`/`block`
+records in an application-level `governance` collection, read and
+enforced by peers themselves), which doesn't depend on the transport
+layer providing per-peer revocation. But §3.4 and §3.7.1 currently read
+as if the crate hands over peer-scoped, expiring, revocable edges for
+free, and it doesn't — the accountability §3.7 describes has to be the
+*whole* mechanism, not a backstop on top of a capability layer that was
+never doing that job. Worth restating §3.4's membership test as "does X
+currently write under an Author key the governance record still honors"
+rather than "does X hold a write edge," since the latter names a
+credential the crate doesn't actually scope to X at all.
 
 ### 3.5 Tiered disclosure: two namespaces, not one
 
@@ -286,15 +476,76 @@ with a real cost (an additional conceptual layer — "governance-eligible"
 model hands over for free, and it should be stated as a choice if this
 gets built, not assumed.
 
-**3.7.3 Tiered friction, simplified — no threshold quorum, just counted
-consent:**
+**Resolved, and the resolution changes what "N-of-M" meant, not just
+which of (a)/(b) got picked.** (b) is confirmed — flat for ordinary data,
+gated for governance-eligible standing — but (b) as originally specified
+requires collecting N affirmative `consent` Signals to ratify anything,
+which turns out to have the same disease at any N above the smallest
+handful: it needs people to actively show up and sign, and real
+cooperative governance's actual failure mode is exactly that they don't
+— not out of malice, just because consensus-shaped processes stall on
+apathy as reliably as they stall on an actual holdout, and a determined
+single objector produces the identical stall on purpose. "Unanimous" for
+changing the policy (below) is the sharpest case of this and the least
+defensible: it hands one member, in practice, a permanent veto over ever
+correcting course.
 
-| Action | Suggested N-of-M | Rationale |
+**The fix inverts what's being counted: ratification requires an
+*absence* of sufficient objection within a window, not a *presence* of
+sufficient consent.** A `Proposal` opens with a deadline; if it closes
+without accumulating enough `block` Signals (§3.9) to meet its class's
+current threshold, it ratifies automatically — silence defaults to
+*yes*, the same directional move §3.7.1 already made for capability
+expiry (silence there defaults to *no* — loss of access — because access
+and decision-making want opposite defaults: the cost of a stale grant
+lingering is higher than the cost of a stale grant lapsing, while the
+cost of a decision never happening is higher than the cost of one nobody
+actively fought). `consent` Signals keep their social meaning — visible
+affirmation, part of the record — but carry no mechanical counting power
+either way; only `block` does. This needed no new primitive: §3.9 already
+drafted `consent | stand_aside | block | abstain | exit` and already
+said, in its "what a block Signal actually does and doesn't do"
+paragraph, that block enforcement is client convention, never
+cryptography. What changes is only the default the mechanism resolves to
+when nobody acts.
+
+**And the thresholds themselves are not this document's to set.** Not a
+fixed table of suggested N-of-M values — a namespace's own current
+(window length, block threshold) pair *per class* is itself governance
+state, set at namespace creation by whoever founds it and amended
+afterward only by a ratified `changePolicy`-class `Proposal`, through the
+identical objection-window mechanism, using whatever the *current*
+changePolicy threshold happens to be (self-amending, recursive — same
+"constitution" property §3.7.3's old "unanimous" row was reaching for,
+except the bar itself is now something a group that finds it too high or
+too low can actually move, rather than being permanently stuck with
+whatever this document guessed). This follows §3.9's own stated
+principle more faithfully than the original table did: *"a cooperative
+that already knows how to run a hard meeting doesn't need software
+telling it how to deliberate."* A protocol-suggested N was already a
+mild violation of that; a protocol-*fixed* unanimity requirement was a
+bigger one.
+
+One wrinkle worth resolving explicitly rather than leaving implicit: if
+the policy changes mid-window (a `changePolicy` Proposal ratifies while
+an unrelated Proposal is still open), the open Proposal keeps the
+threshold and window that were in effect when *it* was created, for its
+entire lifecycle. Nobody's rules change underneath a decision already in
+motion.
+
+**3.7.3 Tiered friction, now group-set rather than protocol-suggested.**
+The mechanism (objection-window ratification) is fixed by the protocol;
+the numbers are not. What the protocol still fixes is which four action
+classes exist and that ordinary sharing stays unilateral — the same
+shape §3.7.3 always had, just with "suggested N-of-M" replaced by
+"group's own current (window, block threshold)":
+
+| Action | Threshold | Rationale |
 |---|---|---|
-| Grant ordinary read/write access to a specific peer | none — unilateral by any current holder | Zero-friction sharing was the entire point; gating this defeats §3.6's "ticket-passing as easy as the relationships that carry it." |
-| Admit a new governance-eligible co-signer | low-medium (e.g. 2–3 of current co-signers) | The recursive, standing-conferring action from §3.7.2 — deserves real but not maximal friction. |
-| Remove a governance-eligible co-signer's standing | high (e.g. most of current co-signers) | Consequential and adversarial; should require the group to actually deliberate, same as expelling a member would in the underlying human organization. |
-| Change the N-of-M policy itself | unanimous among current co-signers | The constitution-amendment case — see §3.8. If a subset could lower their own oversight threshold unilaterally, every other row is decorative. |
+| Grant ordinary read/write access to a specific peer | none — unilateral by any current holder, no Proposal involved at all | Zero-friction sharing was the entire point; gating this defeats §3.6's "ticket-passing as easy as the relationships that carry it." |
+| Admit a new governance-eligible co-signer (`admitCoSigner`) | group's current policy for this class; a sensible starting default is a short window and a small block threshold (e.g. 1) | The recursive, standing-conferring action from §3.7.2 — deserves a real chance for someone to object, not maximal friction to make happen. |
+| Remove a governance-eligible co-signer's standing (`removeCoSigner`) | group's current policy for this class; a sensible starting default is a longer window and a threshold scaled to group size rather than a fixed small number | Consequential and adversarial, but gating it behind "most of the group must actively agree" was exactly the unanimity-adjacent failure mode this revision exists to remove — a real, considered objection should be able to stop it; disengagement shouldn't be able to. |
+| Change the policy itself (`changePolicy`) | group's current policy for *this* class — bootstrapped at namespace creation, thereafter self-amending | The constitution-amendment case — see §3.8. Deliberately still the highest bar of the three by convention (longest window, largest relative threshold), but no longer a protocol-mandated unanimity that a single member can hold hostage forever. |
 
 **3.7.4 Transparency: governance events are records, not administrative
 side effects.** Unchanged from earlier drafts in substance, mechanism
@@ -316,20 +567,56 @@ namespace is a data-*inclusion* problem (your records stop being synced
 into that aggregation), never a data-loss event: nothing about your own
 repo depends on anyone else's cooperation.
 
-**3.7.6 Honest costs, rewritten.** N-of-M consent-by-counting reveals
-exactly who signed, always — unlike FROST's aggregate output, which
-didn't distinguish which *t* of *n* participated. For a `block` or a
-contested co-signer decision, that's a real, narrow opsec cost: outsiders
-or other members can see precisely who did and didn't consent, which
-could matter for someone's safety if patterns get correlated over time.
-Worth the group deciding that's acceptable, not assuming it away. Second
-cost: "governance-eligible" as a status distinct from "has a write edge"
+**3.7.6 Honest costs, rewritten, and sharpened again by §3.7.2's later
+revision.** Objection-by-counting reveals exactly who signed, always —
+unlike FROST's aggregate output, which didn't distinguish which *t* of
+*n* participated. Under the original consent-counted design this meant
+outsiders or other members could see precisely who did and didn't
+consent; under the revision, it's sharper still, because the Signal that
+actually does something is `block` — the person who stopped an admission
+or a removal from going through is now individually, permanently
+identified as having done so, not just absent from a list of consenters.
+That's a real, narrow opsec cost, arguably a larger one than the original
+framing had: a visible blocker is a more specific target than a visible
+non-consenter, if patterns get correlated over time or if the proposal
+was itself adversarial. Worth the group deciding that's acceptable, not
+assuming it away — and worth weighing directly against the alternative
+this revision replaced, which had the opposite failure mode (nothing
+ever ratifying) rather than this one (whoever objects is exposed for
+having done so). Second cost: "governance-eligible" as a status distinct
+from "has a write edge"
 is a real conceptual addition this document is choosing to make (§3.7.2),
-not something free. None of §3.7 has been validated against `iroh-docs`'s
-actual current API surface (§3.4) — in particular, whether it exposes an
-enumerable list of current
-capability/topic holders at all, which the governance-eligible-roster
-idea depends on (§6).
+not something free.
+
+**Validated, per §3.4's probe.** `iroh-docs` exposes no enumerable list
+of current capability/topic holders at all — `DocsApi::list()` returns
+only the calling node's *own* capabilities, and `Doc::get_sync_peers()`
+turned out to be a persistent-store reconnect hint (empty on the
+in-memory nodes tested, even mid-sync), not a live-membership view. The
+governance-eligible-roster idea was never going to get this from the
+transport layer, and §3.7.4 already didn't ask it to: the roster is
+whatever the `governance` collection's signed `consent`/`block` records
+fold up to, computed and verified by each reader locally, same as any
+other application state synced as ordinary entries. That's slightly
+different from how §3.7.2–3.7.4 read on a first pass — less "the
+namespace tracks who's eligible" and more "eligibility is a value every
+reader independently derives by replaying records it already received" —
+but it's the same mechanism, just named more precisely now that it's
+confirmed nothing lower in the stack does this job instead. See §3.4's
+validation note for the sharper and more consequential finding from the
+same probe: write capability itself is a single shared secret, not a
+per-peer edge, which matters more to §3.7's revocation story than the
+roster question did.
+
+**3.7.7 Revocation, resolved: no secret rotation for v1, two lighter
+layers instead.** §3.4's shared-secret finding meant §3.7.1's
+"capabilities expire by default, individually revocable" has nothing to
+attach to at the transport layer — the only mechanical fix (rotating the
+namespace secret on every removal) was costed against what it actually
+defends against and found not worth building yet; full reasoning and the
+two-layer replacement (governance-ratified removal, binding by
+convention; a purely local per-reader mute, needing no protocol surface
+at all) is in §6 item 12, not repeated here.
 
 ### 3.8 Fission and constituent power, without a group key left to fight
 over
@@ -362,9 +649,12 @@ to namespaces, and a new namespace needs nobody's permission to exist.
 
 The `exit` `Signal` (§3.9) still earns its keep here, in simplified form:
 a governance-eligible member's own self-signed withdrawal, shrinking the
-effective *M* for future N-of-M governance decisions — the same
-voluntary-departure-vs-hostile-holdout distinction as before, just
-operating on a counted roster instead of a threshold-share set.
+pool of members eligible to submit a counted `block` `Signal` on future
+Proposals (§3.7.2's revision means what shrinks isn't a consent quorum
+anymore, but the same idea — someone who's left no longer has standing
+to object) — the same voluntary-departure-vs-hostile-holdout distinction
+as before, just operating on a counted roster instead of a
+threshold-share set.
 
 ### 3.9 Vote primitives: minimal cryptography, everything else is convention
 
@@ -389,8 +679,9 @@ be a regression, not a simplification. `exit` is the odd one out and the
 only type with a defined mechanical effect rather than being purely
 informational: a governance-eligible member's own signed withdrawal of
 their claim to future participation, which — per §3.8's fission
-discussion — shrinks the effective *M* for future N-of-M governance
-decisions (§3.7.3) rather than freezing them. Every `Signal` type is an
+discussion — shrinks the pool of members whose `block` `Signal`s count
+toward a Proposal's threshold (§3.7.2's revision, §3.7.3) rather than
+freezing anything. Every `Signal` type is an
 ordinary signed record from the member's own individual key — never a
 threshold operation, no special status, no group key involved anywhere in
 this design. This is where discussion, "I'll go along but want my concern
@@ -398,34 +689,57 @@ noted," and everything else genuinely human-shaped lives, exactly as
 messy as a real meeting, because the protocol doesn't touch it.
 
 **Ratification layer — mechanical, minimal, the only thing with actual
-teeth.** A `Ratification` is nothing but N distinct, valid individual
-`consent` `Signal`s over the same `Proposal`, counted against whatever N
-its class requires (§3.7.3's table) — not aggregated, not threshold-signed,
-just counted by any reader capable of checking N ordinary signatures. It
-either meets that count or it doesn't exist. No cryptographic
-representation of "no" is needed: a `consent` `Signal` already is the
-only "yes" that has power, and declining to sign is every other outcome
-at once.
+teeth. Revised per §3.7.2/§3.7.3: ratification is the absence of
+sufficient objection, not the presence of sufficient consent.** A
+`Proposal` carries a deadline (derived from its class's current window,
+locked in at the moment the Proposal was created — see §3.7.2's note on
+mid-window policy changes). It becomes a `Ratification` the moment that
+deadline passes with fewer than the class's current block-threshold worth
+of outstanding, un-withdrawn `block` `Signal`s from governance-eligible
+members — not aggregated, not threshold-signed, just counted by any
+reader capable of checking signatures and a timestamp. `consent`
+`Signal`s remain real — visible, signed, part of the record, the thing a
+member does to say "I actively support this" — but carry no counting
+power of their own; a Proposal with zero consent Signals and zero block
+Signals still ratifies on schedule. This is the inverse of the
+original design (below), kept for the record: that version made
+`consent` the only Signal type with power and treated declining to sign
+as "every other outcome at once," which is exactly the shape that stalls
+on apathy as readily as on genuine opposition. Flipping which Signal type
+carries the power, and which outcome silence defaults to, was the whole
+fix — nothing else about the layer changed.
 
-**What a `block` Signal actually does, and doesn't do.** At low-N tiers
-(admitting a new co-signer, say 2–3 of current co-signers) a block cannot
-stop willing consenters by itself — the rest just proceed. That's not a
-gap, it matches real consensus practice: you don't give block power over
-routine admission decisions. The tier that already requires unanimity
-(§3.7.3's "change the N-of-M policy itself" row) is exactly where a block
-is *structurally* sufficient, since unanimous-minus-one can never reach
-unanimous. For everything in between, say the honest thing plainly:
-**a block is a social fact enforced by client convention, not by
-cryptography.** An honest reference client refuses to build, relay, or
-act on a `Ratification` whose `Proposal` has an outstanding, un-withdrawn
-`block` Signal from an eligible member — the same way a block works in a
-real meeting: nothing physically stops the room from acting anyway, the
-group's shared practice is what makes it matter. Write that down as a
-client norm, and don't dress it up as a cryptographic guarantee it isn't
-— that distinction (cryptography for privacy and authentication;
+**What a `block` Signal actually does, and doesn't do.** Under the
+original consent-counted design, a block at a low threshold couldn't
+stop willing consenters by itself, and only the unanimous
+policy-change tier gave a block real structural force. Under the
+objection-window model that asymmetry is gone by construction: a `block`
+is the *only* Signal type that does anything mechanically, at every
+tier, because ratification is defined as its absence. A group that wants
+routine admissions hard to block sets a higher threshold for that class
+(§3.7.3); a group that wants any single member able to raise a real
+objection sets it to one. Either way, the honest limit from the original
+design still holds and is worth restating exactly as before: **a block
+is a social fact enforced by client convention, not by cryptography.** An
+honest reference client refuses to build, relay, or act on a
+`Ratification` whose `Proposal` closed with block Signals at or above
+threshold still outstanding — the same way a block works in a real
+meeting: nothing physically stops a dishonest client from acting anyway,
+the group's shared practice and its choice of software is what makes it
+matter. That distinction — cryptography for privacy and authentication;
 everything about how a decision is actually made is convention, enforced
-by the humans and the software they choose to run) is the design
+by the humans and the software they choose to run — is the design
 principle this whole section follows, not just this one paragraph.
+
+**Superseded — kept for the record, not deleted.** The original
+Ratification rule: *"N distinct, valid individual `consent` `Signal`s
+over the same `Proposal`, counted against whatever N its class requires
+... It either meets that count or it doesn't exist. No cryptographic
+representation of 'no' is needed: a `consent` `Signal` already is the
+only 'yes' that has power, and declining to sign is every other outcome
+at once."* This is precisely backwards for a group where declining to
+sign is the *normal* outcome regardless of opinion — which, per §3.7.2,
+is what real cooperative governance actually looks like.
 
 ## 4. Relationship to `street-smarts`'s `tools/sbci/`
 
@@ -478,16 +792,104 @@ lexicons' NSIDs (still `network.essmesh.*`) or otherwise generalize the
 concrete schemas — that's a real open decision (§6), not something to
 silently decide while moving files.
 
+**Confirmed in code, not just in this paragraph.** The general-purpose
+claim above was a prediction about the architecture; `atproto-iroh-core`
+now has a second, non-lexicon-typed write path (`namespace::put_text`)
+sitting right next to `put_record`, using the identical sync and
+capability machinery. Nothing about a namespace requires the four
+ESS lexicons, or any lexicon at all — a namespace is a capability-scoped,
+multi-writer, synced key/value space; typed records are one way to use
+it, freeform shared text is another, and both are live. Realized in
+conversation as "a Google doc without Google," which is a more exact
+description of what this already was than "a cooperative's shared data"
+ever was — the ESS case just happened to be the first one built against
+it. `submit_text` (a variant that mints its own unique key per call) is
+the same primitive specialized for the uncoordinated-submitters case —
+a public inbox, functionally — which composes with a `Write` ticket
+turned into a QR and posted publicly: safe by construction, not by
+policy, since `RecordIdentifier`'s `(namespace, author, key)` shape
+(§3.4) means a stranger can only ever write under an author they
+generated, never forge or overwrite anyone else's entry. The genuine
+residual risk is volume, not forgery — the same resource-attack case §6
+item 12 already named, just with the probability turned up by making the
+ticket public on purpose instead of handing it to people individually.
+
+**Confirmed live, not assumed from "it's a CRDT": what actually happens
+when two peers edit offline and don't reconnect for a while.** Jason
+asked this directly (2026-09-22) and the honest answer splits in two,
+proven by two different live tests rather than by reading `iroh-docs`'
+docs and trusting them:
+
+- **Per-`(author, key)` writes are genuinely safe.** `NodeProfile`,
+  `Proposal`/`Signal`, and `submit_text` inbox entries each get their own
+  key (author's own record slot, or a fresh `new_entry_key()` per call).
+  Two offline authors writing different keys never touch the same entry,
+  so reconnecting is a pure union — nothing is ever at risk of being
+  discarded, because there was never a conflict to resolve.
+- **A single shared key written by two offline authors is
+  last-writer-wins, and the loser is silently discarded.**
+  `namespace::put_text` at one fixed key — the "Shared doc" primitive as
+  it stood before this revision — resolves concurrent writes to that
+  exact `(namespace, author, key)` tuple by `iroh_docs::sync::Record`'s
+  own `Ord` (timestamp, then hash). Two people editing the same "doc" on
+  separate flights and landing hours apart: both devices show their own
+  edit as correct the whole time they're offline: no error, no pending-
+  merge indicator, nothing suggesting a conflict is coming, because
+  locally there isn't one yet. The instant both peers sync, one edit
+  wins outright and the other is gone — not merged, not flagged, not
+  recoverable from this crate's data model, because the losing bytes were
+  never kept anywhere. For a "Google doc without Google" pitched as this
+  namespace model's flagship freeform use, that's a real, silent
+  data-loss bug waiting to happen the first time two org members
+  actually go offline at the same time, not a hypothetical edge case.
+
+**Mitigation shipped the same day, not deferred.**
+`namespace::save_document_revision`/`list_document_revisions`/
+`load_document` replace "one shared mutable key" with "an
+append-only stream of immutable revisions under `{doc_id}/rev/`," each
+write keyed by its own `new_entry_key()` — the same trick `submit_text`
+already used for inbox collisions, applied here to the doc-editing case
+instead. Two offline authors editing the same `doc_id` now produce two
+revisions that both survive sync; nothing is ever silently destroyed.
+`load_document` still has to pick *something* to show as "current" (the
+latest key), which is a UX default, not a claim that the later write is
+semantically the right one to keep — a real merge UI (show both, let a
+human reconcile) is future work, but "both edits exist and are visible"
+is the load-bearing property this fixes, and it's true now.
+`namespace::put_text` itself is untouched and still last-write-wins on
+purpose — it's the right choice for content that's genuinely
+single-writer or where "latest wins" is the actual desired semantics (a
+status line, a self-authored note), and forcing revision history onto
+every freeform write would be the wrong default for that case. Proven
+live in `crates/atproto-iroh-core/tests/document_revisions.rs`: two real
+nodes, both write a revision of the same `doc_id` before either has
+synced with the other, then both sides are read back and shown to have
+both revisions, not just whichever synced last.
+
 ## 6. Open questions, ranked by "blocks anything getting built"
 
-1. Has anyone talked to an actual cooperative about whether any of this
-   solves a problem they have? Still ranked first, on purpose — everything
-   below is unbuildable-usefully without an answer to this one.
-2. Does `iroh-docs` expose an enumerable list of who currently holds a
-   capability grant into a namespace? §3.7.2's governance-eligible-roster
-   idea depends on being able to check who currently holds a grant-capable
-   edge, not just on holding one yourself. Needs a real read of the
-   crate's current source, not assumed from memory.
+1. **Partially answered, first-person, and it's what drove item 4's
+   resolution.** Jason has built cooperatives himself, mostly
+   unsuccessfully, and says this design would have solved real blocking
+   problems he hit — specifically the consensus/unanimity failure mode
+   §3.7.2's revision now targets directly. That's a real answer, not a
+   hypothetical one, but it's one founder's retrospective account, not
+   the "walk this design past an active cooperative and watch what breaks
+   against real, current group dynamics" check this item originally
+   asked for — still worth doing before treating the rest as validated,
+   still ranked first on purpose, just no longer answered with silence.
+2. **Resolved, by a real probe against the crate
+   (`crates/atproto-iroh-core/examples/iroh_docs_probe.rs`), not by
+   memory.** No — `iroh-docs` exposes no enumerable list of who currently
+   holds a capability grant into a namespace. `DocsApi::list()` is local-
+   only (this node's own capabilities); `Doc::get_sync_peers()` is a
+   persistent-store reconnect hint, not a membership view, and was empty
+   even mid-sync on the in-memory nodes tested. Not a blocker: §3.7.4
+   already puts the actual roster computation at the application layer
+   (folding the `governance` collection's signed records), which needed
+   no crate support to begin with — see §3.4's and §3.7.6's validation
+   notes for the detail, and for the sharper finding the same probe
+   turned up about write capability not being per-peer at all.
 3. **Resolved by correcting a misreading, not by new design work**: an
    earlier revision worried about scoping multi-hop gossip relay to
    exactly the edge set, which would have been a real, load-bearing
@@ -495,26 +897,47 @@ silently decide while moving files.
    sync between edge holders, not epidemic/relayed gossip, so there's no
    relay boundary to leak beyond in the first place. Kept as a record that
    this was worried about and the worry doesn't survive the correction.
-4. §3.7.2's fork — flat capability-granting (a) vs. N-of-M consent
-   specifically for governance-eligible status (b) — is a live, unresolved
-   design choice, not something this document has picked on the group's
-   behalf despite recommending (b). Whoever actually builds this should
-   decide it deliberately, ideally with input from a cooperative that
-   would use it.
-5. N-of-M consent-by-counting (§3.7.6) reveals exactly who signed, every
+4. **Resolved, with input from exactly the kind of cooperative-builder
+   experience item 1 asks whether anyone's talked to.** (b) confirmed —
+   flat for ordinary data, gated for governance-eligible standing — but
+   the gating mechanism itself changed: not N collected `consent`
+   Signals, but ratification-by-default unless enough `block` Signals
+   land within a window, with the window and block threshold themselves
+   group-set governance state rather than protocol-fixed numbers (full
+   reasoning in §3.7.2/§3.7.3's revision, mechanics in §3.9). The reason,
+   plainly: real consensus-shaped requirements don't fail by people
+   actively voting no, they fail by nobody showing up to reach the
+   count, and a single determined holdout produces the same stall as a
+   protocol feature, not a bug in any particular group. §3.9's Signal
+   vocabulary and §3.7.4's transparency mechanism needed no changes —
+   only which Signal type carries mechanical power, and which outcome
+   silence defaults to, flipped.
+5. Objection-by-counting (§3.7.6) reveals exactly who blocked, every
    time — a real, narrow opsec cost relative to what FROST's aggregate
-   signature would have hidden. Is that acceptable, given who this is
-   for? Not evaluated here.
-6. What does an ordinary member's experience of signing a `consent`
-   `Signal` actually feel like in practice — is "sign an ordinary message
-   with your existing key" as frictionless as this document assumes, or
-   does it still need real UX work to not become its own version of the
-   threshold-ceremony problem it was designed to avoid?
-7. Hosting-on-behalf-of threat model, now much lighter-weight than earlier
-   drafts (§3.7.5) but not zero: what can someone running shared
-   infrastructure for a namespace still see or do with an ordinary,
-   unilaterally-grantable read/write edge, and is that residual exposure
-   acceptable to a group like Eleanor's?
+   signature would have hidden, sharper now than in the original
+   consent-counted design because the exposed party is specifically
+   whoever stopped something, not whoever declined to affirm it. Is that
+   acceptable, given who this is for? Not evaluated here.
+6. What does an ordinary member's experience of signing a `Signal` in
+   practice actually feel like — is "sign an ordinary message with your
+   existing key" as frictionless as this document assumes, or does it
+   still need real UX work to not become its own version of the
+   threshold-ceremony problem it was designed to avoid? Sharper now than
+   when this was first asked: since §3.7.2's revision, `consent` carries
+   no mechanical power, only `block` does — does a group still bother
+   signing `consent` when it's purely social, or does the record quietly
+   go quiet (nobody signs anything, a Proposal just... times out and
+   ratifies) in a way that's fine mechanically but loses the "everyone
+   was actually paying attention" signal transparency was partly for? And
+   does making `block` the one Signal that matters make members more
+   reluctant to use it, precisely because §3.7.6 just established it's
+   also the one that exposes them?
+7. **Deprecated, by decision, not resolution.** Hosting-on-behalf-of
+   threat model — what someone running shared infrastructure for a
+   namespace could still see or do. Dropped rather than answered: nothing
+   in the Phase 1 build (§6 item 15) has anyone hosting on anyone else's
+   behalf, so there's no live case to reason about yet. Worth reopening
+   the moment that changes, not before.
 8. **Superseded, not open**: FROST tooling maturity, UCAN-over-a-threshold-DID,
    rekey-as-succession, and DID-identifier-continuity-across-a-rekey were
    all real open questions against the group-DID/FROST architecture in
@@ -522,26 +945,26 @@ silently decide while moving files.
    architecture (§3.2–§3.8) — there is no group DID to rekey or need
    continuity for. Kept here as a record that the architecture changed
    underneath them, not because they're still live.
-9. New namespace migration: if a group ever wants to move "Eleanor's" to
-   a different topic entirely (not fission — the same group, deliberately
-   relocating), is there a clean way to signal "this topic supersedes
-   that one" to existing edge-holders, or does every holder need to be
-   individually re-shared with the new topic by hand? Unlike the old
-   DID-redirect problem this replaces, there's no natural place to put
-   that signal, since a bare topic ID carries no signature of its own the
-   way a DID document did.
-10. **Mostly resolved by §3.4's correction, worth confirming against the
-    real API rather than fully closing**: new-member historical access
-    was a real open question when "live propagation" and "backfill" were
-    two separate mechanisms with different semantics. With one mechanism
-    (direct sync of the namespace's `iroh-docs` document), the answer
-    should just fall out of what document sync means by definition —
-    syncing a document gets you its current state, not merely a
-    subscription to future changes. What's still unverified: does
-    `iroh-docs` actually behave that way in practice, and does a new
-    member's first sync need to happen against one specific peer they can
-    reach, or can it pull from any current holder — which would make this
-    faster in practice than it reads on paper.
+9. **Deprecated, by decision, not resolution.** New-namespace migration —
+   whether there's a clean "this topic supersedes that one" signal for a
+   group deliberately relocating. Its main live motivation was rotation
+   (§6 item 12): a rotated namespace needing a way to point existing
+   holders at its replacement. Item 12 resolved against rotation for v1,
+   so the sharpest reason this mattered went with it. Still a real gap if
+   it comes up on its own — a group relocating for reasons that have
+   nothing to do with revocation is a separate, plausible case — but not
+   one anything currently being built needs answered.
+10. **Resolved.** New-member historical access: confirmed live against
+    the real crate, not just inferred from what document sync should mean
+    by definition. Three entries were committed before a second node ever
+    held a ticket for the namespace; after that node imported the ticket
+    and synced, it had all three, unprompted — full backfill on grant,
+    not a tail subscription (`crates/atproto-iroh-core/examples/iroh_docs_probe.rs`,
+    also written up under §3.4). Still genuinely open: whether a new
+    member's first sync needs one specific reachable peer or can pull
+    from any current holder — the probe only ever tested two nodes
+    syncing directly, never a three-plus-peer topology, so "any current
+    holder" is untested, not confirmed.
 11. The four lexicons at `lexicons/` (§3.3, §3.9) are a careful draft
     following documented atproto lexicon conventions, not run through an
     actual lexicon validator or checked against current atproto tooling —
@@ -551,3 +974,156 @@ silently decide while moving files.
     `profile`'s and `event`'s field lists specifically, since those are
     the two records asking someone to describe themselves, not just the
     two managing protocol mechanics.
+12. **Resolved: no rotation for v1, decided on threat model, not
+    convenience.** `iroh-docs` write capability is one shared
+    `NamespaceSecret` per namespace, identical across every writer, not a
+    per-peer credential (§3.4's validation note). Closing that gap with
+    rotation was costed out directly: cheap to mint, expensive to land —
+    it touches every remaining holder (not just the removed one), has no
+    continuity mechanism (a new `NamespaceId` with nothing carrying over
+    automatically, no "this supersedes that" signal since §6 item 9 is
+    still open), and doesn't even retroactively unwrite anything the
+    removed person already synced elsewhere. Weighed against what it
+    actually buys: rotation only defends against a *resource* attack —
+    someone who keeps writing to flood or spite the shared document after
+    being voted out, imposing real sync/storage cost on everyone who
+    remains. Against the ordinary case — a member the group no longer
+    trusts or wants to platform, who isn't trying to break the
+    infrastructure — it buys nothing that's not already covered by
+    convention-based enforcement, and judged (Jason, from direct
+    cooperative-building experience) rare enough not to justify that
+    coordination cost up front.
+
+    **What v1 ships with instead, and these are two different layers, not
+    one:** (1) the governance-level removal already built (§3.7.2's
+    ratified `removeCoSigner` Proposal) — a group decision, binding on
+    honest clients by the same convention-not-cryptography principle
+    §3.9 already established for `block`; and (2) a purely local,
+    unsigned, unsynced per-reader **mute** — one person deciding they
+    personally don't want to see someone's entries, needing nobody's
+    agreement, carrying no protocol surface at all (no lexicon, no
+    record, no `governance` collection entry) because a personal
+    preference doesn't need cryptographic backing any more than deciding
+    not to read a particular news outlet does. Mute is strictly lighter
+    than removal — it changes what one reader's own client shows them,
+    nothing about anyone else's view or the removed party's standing —
+    and either can exist without the other: a member can be muted by one
+    person without the group ever voting on anything, or removed by the
+    group while individuals who'd already muted them notice nothing new.
+
+    Not deleting the option: if a real resource-attack incident ever
+    happens, rotation is still exactly the mechanism described above,
+    unbuilt but fully specified — this is a decision against building it
+    now, made on a stated threat-model judgment, not a claim that the
+    gap doesn't exist.
+13. **Resolved, by working through the repo/namespace relationship
+    directly (§3.3's revision).** Namespace entries are independent,
+    deliberately-published records, never an automatic mirror of a
+    member's MST repo — checked against goals 1–3 and against the
+    scrubbing-surface reasoning in §3.4's validation note, and it loses on
+    every axis. Consequence: a persistent MST repo is optional for
+    namespace-only participation, not required. What replaces "keep a
+    repo for interop" is narrower and cheaper: keep records
+    lexicon/MST-*shaped* when you write them, which costs nothing extra
+    given goal 4 already committed to that format.
+14. **New.** The opt-in bridge to the wider atproto ecosystem (§3.3) is
+    named and reasoned about but not designed: what exactly the minimal
+    PDS-shaped service needs to implement (`com.atproto.sync.getRepo` at
+    minimum; whether `subscribeRepos` is avoidable or whether any relay
+    integration requires it); how a bridge identity's `did:plc`/`did:web`
+    keypair relates to someone's `did:iroh` one procedurally (generated
+    once at bridge-setup time and treated as fully separate key material,
+    presumably — not decided); and whether "republish this one record
+    through the bridge" is a per-record manual action or something a
+    person can pre-authorize for a whole namespace going forward (the
+    latter reopens the automatic-mirroring problem item 13 just resolved
+    against, one boundary further out — worth being as careful here as
+    §3.3 was about the repo/namespace boundary, not less).
+15. **New — explicitly filed as Phase 2, not part of the initial build.**
+    Run with no bridge at all, this architecture is a local, private,
+    offline-capable Bluesky-shaped substrate (§3.3) — but two pieces are
+    missing before "shaped like" becomes "behaves like": (a) a
+    social-interaction lexicon set (post/like/repost/follow/thread-shaped
+    records; nothing here has drafted these, only the ESS-specific
+    `node.profile`/`node.event`/governance schemas at
+    `lexicons/network/essmesh/`), and (b) a feed/timeline construction
+    layer computed locally by each reader over whatever repos and
+    namespaces they currently hold capabilities into, since there is no
+    server-side AppView to do that computation the way Bluesky's does.
+    (b) is the larger piece — ranking, deduplication, and thread
+    assembly done once centrally over a public firehose is a different
+    problem from the same computation done independently by every reader
+    over a different, smaller, capability-scoped view of the world, and
+    nothing in this document has touched that problem yet. Deliberately
+    out of scope until the ESS case (Phase 1: identity, namespaces,
+    capability grants, governance, the four drafted lexicons) has a real
+    implementation — building a feed algorithm before the underlying
+    sync/capability substrate has been used for anything real would be
+    designing the harder problem first, on no evidence from the easier
+    one.
+16. **Resolved (2026-09-22): the founding-record gap this document and
+    the Tauri README both flagged as the most consequential remaining
+    one.** §3.7.2 always required genesis state (who's eligible, what
+    the starting policy is) to exist, without ever saying how it gets
+    recorded — the reference client filled the gap with a heuristic
+    (anyone who'd self-asserted `governanceEligible: true` in their own
+    `NodeProfile`) that lexicon's own field description already called
+    non-authoritative. Real answer: `network.essmesh.governance.founding`
+    (`lexicons/network/essmesh/governance/founding.json`) — a record
+    each founder writes at a fixed per-author key (`self`), the same
+    `(namespace, author, key)` forgery-safety every other author-scoped
+    record in this design already has (§3.4).
+
+    The interesting part isn't the record shape, it's resolving
+    *multiple* claims into one genesis state without opening a new hole:
+    nothing stops a member admitted long after genesis (anyone ever
+    granted Write capability can write under their own author key) from
+    posting their *own* `Founding` claim, trying to retroactively grant
+    themselves genesis-eligible status. `RecordIdentifier`'s shape
+    already stops them from forging a claim as someone else, but says
+    nothing about *when* a claim was made. Fix: take the earliest
+    claim's `createdAt` as t0, and only union eligibility from claims
+    within a bounded acceptance window of t0 (default one hour —
+    `governance::DEFAULT_FOUNDING_WINDOW_SECONDS`, itself just this
+    implementation's default, not a protocol constant, same status every
+    other policy number in this document already has). A claim outside
+    the window is silently ignored for genesis purposes — its author
+    needs a real `admitCoSigner` Proposal instead, same path as anyone
+    else joining later. Starting policy is taken only from the earliest
+    claim, not unioned or arbitrated among co-founders — a real
+    multi-founder disagreement about starting policy isn't something
+    this layer resolves on anyone's behalf.
+
+    Implemented in `crates/atproto-iroh-core/src/governance.rs`
+    (`Founding`, `FoundingClaim`, `resolve_founding` — pure, unit-tested,
+    same "generic over the author type, no I/O" split as the rest of
+    that module) and `fold.rs` (`found_namespace`/`read_founding`/
+    `fold_namespace` — the real hex-decoding and sync-reading layer a
+    client actually calls). Proven live, not just unit-tested:
+    `crates/atproto-iroh-core/tests/founding.rs` posts a real `Founding`
+    claim on one node, syncs it to a second, and confirms
+    `fold_namespace` resolves real genesis state from it with no
+    caller-supplied eligible set or policy at all — the exact heuristic
+    this item closes out. Both the Tauri shell
+    (`create_namespace_with_profile` now calls `found_namespace`;
+    `list_proposals`/`governance_state` now call `fold_namespace`) and
+    the CLI (`create-namespace`) call the real path now, not the
+    heuristic.
+17. **Resolved (2026-09-22): mint our own lexicons, don't reuse
+    Bluesky's real NSIDs.** Jason asked directly whether reusing
+    `app.bsky.*` schemas (post/reply/embed shapes are mature, well
+    thought through) would be confusing or advantageous. Answer: reusing
+    the actual NSIDs would be actively misleading, not just a style
+    choice — a record stamped `app.bsky.feed.post` implies it's
+    resolvable via the public firehose/AppView, and this design's whole
+    point (goal 1, zero ambient legibility) is that it isn't. Same
+    schema shape, incompatible promise about how the record can be
+    found and read. What's still advantageous, and not in conflict with
+    that: structurally *borrowing* proven Bluesky field shapes
+    (post/reply/embed for the messaging/documents apps on §6's earlier
+    batteries-included list) under this project's own NSIDs, since
+    reinventing those shapes from scratch would be wasted effort for no
+    benefit. If the Phase 2 bridge (item 14 above) ever ships, mapping
+    essmesh-shaped records to real `app.bsky.*` ones at that boundary is
+    a small, honest translation step, not something squatting on the
+    name now would have skipped usefully.
