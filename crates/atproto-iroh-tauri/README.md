@@ -471,6 +471,17 @@ new `list_tables` Tauri command returns it. The mock now refuses Table
 calls until spawned, like the real backend (`App.test.tsx`), and
 `CreateTable.test.tsx` runs the loop from nothing.
 
+**Device testing fixes (2026-09-25)** — `USER_FLOW.md` §3 #6–#8 has
+the detail. Three bugs only a real phone showed: the frontend treated
+the node's network key as "me" when records are signed by the iroh-docs
+author key (new `self_author_hex` command; the mock now keeps the two
+keys distinct so a test can catch a mix-up); reopened and newly created
+Tables never started sync, so peers' writes were refused (fixed in
+core, `tests/reopen_sync.rs`); and open screens never refetched (new
+`usePoll`: 5s in a Table, 10s on the Feed, plus on returning to the
+foreground). Founders can also name or rename a Table from its header
+(`set_table_name`, refused for non-founders).
+
 **Design-interview edge cases fleshed out (2026-09-24)**, following a
 gap check against `.impeccable.md`/`DESIGN_BRIEF.md` after the
 `/simplify` pass above — three real, previously-flagged gaps closed:
@@ -528,9 +539,10 @@ gap check against `.impeccable.md`/`DESIGN_BRIEF.md` after the
 - `src-tauri/` is a genuine Tauri 2 app: `atproto-iroh-core` is a normal
   path dependency, no IPC or FFI boundary between UI-adjacent code and
   protocol logic.
-- Thirty commands (28 plus `pins` and `list_all_tags`, both added
-  2026-09-23 alongside their `tagging::` core-crate counterparts), each
-  a direct call into the core crate:
+- Thirty-three commands (28, plus `pins` and `list_all_tags` added
+  2026-09-23 alongside their `tagging::` core-crate counterparts, plus
+  `list_tables`, `self_author_hex` and `set_table_name` from device
+  testing), each a direct call into the core crate:
   `spawn_node` (loads or generates a persistent `did:iroh` identity and
   starts a real `iroh` node against real on-disk storage — deliberately
   not done at app launch; see `main.rs`'s comment on why), `node_did`,

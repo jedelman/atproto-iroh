@@ -39,7 +39,7 @@ SPEC.md's 2026-09-22 CRDT note) and the Tauri "Shared doc" UI is wired to
 it, including a conflict-visibility pass (Documents UX, batteries list
 below) — not just the primitive existing unused.
 
-Two clients now, both real: the Tauri reference app (30 commands — see
+Two clients now, both real: the Tauri reference app (33 commands — see
 "Client" below) and `crates/atproto-iroh-cli`, a one-shot-process Linux
 CLI plus a `serve` mode for anything that needs to stay reachable (own
 README, including a real bug it found and fixed live: a `share` ticket
@@ -137,8 +137,9 @@ QR *generation*, the raw inspector, and relay/control — a real,
 narrower gap now, not the wholesale step back this section used to
 describe; `crates/atproto-iroh-tauri/README.md`'s own "Not yet ported"
 list is kept current there rather than duplicated and re-drifting here.
-The 30 Tauri commands (28 plus `pins`/`list_all_tags`, added alongside
-their `tagging::` core-crate counterparts this session) are unaffected
+The 33 Tauri commands (28, plus `pins`/`list_all_tags` added alongside
+their `tagging::` core-crate counterparts, plus `list_tables`/
+`self_author_hex`/`set_table_name` from device testing) are unaffected
 either way, since this is a frontend rebuild over a backend that only
 gained three small additions (`pins`, `list_all_tags`,
 `NodeProfile.avatar`) for it. Exact command names, what each does,
@@ -389,6 +390,17 @@ worth logging for diagnostics — this is the shared plumbing referenced
 there). Tauri command + frontend hook follow once the core piece
 exists. Not built this session — recorded here so the next session
 doesn't re-derive it or repeat the "no primitive exists" mistake.
+
+**Interim (2026-09-25): the frontend polls.** Device testing showed
+open screens never refetched, so `usePoll` refreshes a Table every 5s
+(Feed 10s) and on returning to the foreground. The `docs.subscribe`
+stream above is also the natural push-on-arrival replacement for that
+polling — one subscription serving the offline banner, the ring
+buffer, and refresh. Same session found a real sync bug under all of
+this: `open_namespace`/`create_namespace` never called `start_sync`,
+and iroh-docs refuses incoming sync for a namespace that isn't live, so
+a restarted node (phone or relay `serve`) silently stopped receiving.
+Fixed in core, proven by `tests/reopen_sync.rs`.
 
 ## Federation model, platform priority, and background execution
 

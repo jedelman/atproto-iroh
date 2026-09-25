@@ -29,6 +29,11 @@ export interface TableSummary {
   /** A genesis member's `table/name` entry (`fold::read_table_name`),
    * or a truncated id when there isn't one — never an invented name. */
   name: string;
+  /** False when `name` is the truncated-id fallback. */
+  named: boolean;
+  /** Whether you're a genesis member, i.e. whether `setTableName` from
+   * this device would count. */
+  canRename: boolean;
 }
 
 export interface Client {
@@ -38,7 +43,12 @@ export interface Client {
    * it. `nodeDid`/`listNamespaces`/`listTables` answer null/empty before
    * it instead of failing, same as the real backend. */
   spawnNode(): Promise<string>;
+  /** This device's *network* identity. Not "you" as an author — use
+   * `selfAuthorHex` for "is this record mine?". */
   nodeDid(): Promise<string | null>;
+  /** Hex of the author key that signs this device's records — the key
+   * every `author_hex` in a view is compared against. */
+  selfAuthorHex(): Promise<string>;
   listNamespaces(): Promise<string[]>;
   /** Every Table this node holds a capability into, with a display name. */
   listTables(): Promise<TableSummary[]>;
@@ -58,6 +68,8 @@ export interface Client {
    * needs to post; "Read" suits a relay. A ticket is a bearer secret
    * (SPEC.md §3.4): whoever holds it has that access. */
   shareTable(namespaceId: string, mode: "Read" | "Write"): Promise<string>;
+  /** Names or renames a Table; rejects unless you're a genesis member. */
+  setTableName(namespaceId: string, name: string): Promise<void>;
   /** Renders a ticket as SVG markup (the Rust `qrcode` crate). */
   ticketToQr(ticket: string): Promise<string>;
   updateProfile(

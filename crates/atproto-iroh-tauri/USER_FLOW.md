@@ -75,7 +75,7 @@ sequenceDiagram
   A->>A: Invite — share_namespace (Write) + ticket_to_qr ✓
   A--)B: Bob scans Alice's screen (or she sends the code)
   B->>B: Join — scan or paste → join_namespace ✓
-  B->>A: sync — proven in core's two-node tests, phone↔phone not yet tried
+  B->>A: sync — proven in core's two-node tests (incl. after restart), phone↔phone not yet tried
 ```
 
 ## 3. Gaps, ranked by how hard they block the loop
@@ -97,6 +97,20 @@ command. #5 is still open.
 | 3 | **No way to invite anyone.** Even a created Table has no ticket or QR to hand out. | No `Client` method; no UI. | `share_namespace` (Read/Write ticket) and `ticket_to_qr` (SVG) are real Tauri commands. |
 | 4 | **Tables have no names on the real backend.** You'd see `Table a1b2c3d4…`. | `tauriClient.listTables`'s honest fallback. | DESIGN_BRIEF.md §9 has the proposed fix (`put_text` at a well-known `table/name` key, written by the founder). Creating a Table (#2) is the natural place to set it. |
 | 5 | No Advanced surface (raw inspector, relay/control, showing your `did:iroh`). | README's "Not yet ported". | `dump_namespace`, the control endpoint, `node_did`. |
+
+**Found on a real phone (2026-09-25), all fixed**: three more gaps that
+no mock-backed test could see.
+
+| # | Gap | Cause | Fix |
+|---|-----|-------|-----|
+| 6 | **"This pinned message hasn't synced yet"** under a message that's plainly there; new photos stuck on "not synced yet"; Profile edit not prefilled; a founder offered no Support/Object. | The frontend's "self" was the node's network key (`did:iroh`), but records are signed by the iroh-docs *author* key. Two different keys; the mock used one hex for both. | New `self_author_hex` command; `lib/identity.ts` uses it. The mock now keeps the two keys distinct (`SELF_NODE_HEX` vs `SELF_AUTHOR_HEX`), and a test pins a just-sent message and checks the pin resolves after a reload (fails if the keys are mixed up again). |
+| 7 | **Nothing from the other phone ever arrives.** | `Node::open_namespace` (used for every Table on restart) and `create_namespace` never started sync; iroh-docs rejects incoming sync for a namespace that isn't live (`AbortReason::NotFound`). Only join and share started it. The CLI's relay `serve` had the same bug. | Core now calls `start_sync` in both. `tests/reopen_sync.rs` restarts a node, reopens, and checks a peer's write arrives; it timed out before the fix. |
+| 8 | **Open screens never update.** | Every screen fetched once on mount. | `hooks/usePoll.ts`: Table detail, tags and the shared doc refresh every 5s, the Feed every 10s, and all of them once when the app returns to the foreground. Paused while backgrounded. Optimistic sends drop out once the real record arrives. The shared doc never overwrites unsaved typing. Push on arrival (iroh-docs LiveEvents) can replace polling later; it's the same event stream the connectivity design needs. |
+
+A Table created before names existed shows `Table 52d8eb76…`. Its
+founder now gets "Name this table" in the header (and "Rename" once
+named): `set_table_name` refuses non-founders, matching
+`read_table_name`, which ignores them anyway.
 
 ## 4. Why the tests didn't catch #1–#3 (and what changed)
 

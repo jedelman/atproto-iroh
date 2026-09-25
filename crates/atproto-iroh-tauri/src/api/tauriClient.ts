@@ -29,11 +29,18 @@ export const tauriClient: Client = {
   nodeDid: () => invoke("node_did"),
   listNamespaces: () => invoke("list_namespaces"),
   listTables: async () => {
-    const tables = await invoke<{ id: string; name: string | null }[]>("list_tables");
+    const tables = await invoke<{ id: string; name: string | null; can_rename: boolean }[]>("list_tables");
     // A Table no genesis member ever named (or one joined before its
     // name synced) gets a truncated id, not an invented name.
-    return tables.map(({ id, name }) => ({ id, name: name ?? `Table ${id.slice(0, 8)}…` }));
+    return tables.map(({ id, name, can_rename }) => ({
+      id,
+      name: name ?? `Table ${id.slice(0, 8)}…`,
+      named: name !== null,
+      canRename: can_rename,
+    }));
   },
+  selfAuthorHex: () => invoke<string>("self_author_hex"),
+  setTableName: (namespaceId, name) => invoke("set_table_name", { namespaceId, name }),
   joinNamespace: (ticket) => invoke<string>("join_namespace", { ticket }),
   createNamespaceWithProfile: (name, category, avatar, tableName) =>
     invoke("create_namespace_with_profile", { name, category, avatar, tableName: tableName ?? null }),

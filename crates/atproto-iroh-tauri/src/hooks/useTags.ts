@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type TagView } from "../api";
+import { usePoll } from "./usePoll";
 import { PIN_LABEL } from "../api/types";
 
 function isSystemLabel(label: string): boolean {
@@ -46,6 +47,9 @@ export function useTags(tableId: string) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+  // Same cadence as useTable — other members' tags and pins arrive
+  // while the Table is open, not only on the next visit.
+  usePoll(refresh, 5_000);
 
   // system:-prefixed labels (PIN_LABEL and anything else this crate
   // later reserves — tagging.rs's own top doc comment) are built-in

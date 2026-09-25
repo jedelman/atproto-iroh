@@ -1,38 +1,31 @@
-// Resolving "who am I" as a bare author hex — every self-identifying
-// spot in this frontend (Composer, PhotosPanel, DecisionsPanel,
-// ProfileEdit, Feed's header avatar, Join's profile-on-join write)
-// needs the same thing: nodeDid() returns "did:iroh:<hex>", but every
-// other Client method (author_hex params, ProfileView.author_hex, the
-// mute list, etc.) wants the bare hex. Found duplicated inline at six
-// call sites during a code-review pass — pulled out here so a future
-// change to the did:iroh prefix format only needs fixing in one place.
+// Resolving "who am I" as a bare author hex — every self-identifying spot
+// in this frontend (Composer, PhotosPanel, DecisionsPanel, ProfileEdit,
+// Feed's header avatar, Join's profile-on-join check) compares against
+// it.
+//
+// It must be the key that *signs* your records (`selfAuthorHex`), not
+// the node's network identity (`nodeDid`). Those are two different keys
+// on a real device — iroh-docs mints its own author — and this used to
+// strip the `did:iroh:` prefix off `nodeDid` instead. The mock used one
+// key for both, so it looked right in every test and screenshot; on a
+// phone, a just-sent message was pinned under an address that would
+// never exist ("the pinned message hasn't synced yet" with the message
+// right below it), and a founder never saw Support / Object.
 
 import type { Client } from "../api/client";
 
-export function stripDidPrefix(did: string | null | undefined): string | null {
-  return did ? did.replace(/^did:iroh:/, "") : null;
-}
-
-// A node's own DID is invariant for the life of the session, but
-// nodeDid() is a real Tauri IPC round-trip (tauriClient.ts's
-// invoke("node_did")) — a code-review pass found it re-invoked on
-// every single self-identifying action (every message send, every
-// upload, every mount of a self-aware panel). Cached per `api` object
-// identity (a `WeakMap`, not a module-level singleton) so a test's own
-// mock `api` instance gets its own cache rather than leaking a stale
-// value across tests that construct different mocks.
+// Invariant for the session but a real IPC round-trip, so cached per
+// `api` object (a WeakMap, so each test's mock gets its own cache).
 const cache = new WeakMap<object, Promise<string | null>>();
 
-export async function resolveSelfAuthorHex(api: Pick<Client, "nodeDid">): Promise<string | null> {
+export async function resolveSelfAuthorHex(api: Pick<Client, "selfAuthorHex">): Promise<string | null> {
   const cached = cache.get(api);
   if (cached) return cached;
-  const promise = (async () => stripDidPrefix(await api.nodeDid()))();
+  // Fails before the node is spawned — answer "no self yet" and don't
+  // cache it, since it becomes real once the node is up.
+  const promise = api.selfAuthorHex().catch(() => null);
   cache.set(api, promise);
   const hex = await promise;
-  // A null result means there's no identity yet (node_did's own doc
-  // comment: `None` before an identity is loaded) — don't pin that
-  // "no self" answer forever, since it can become real once one loads;
-  // only a resolved hex is safe to treat as permanent for the session.
   if (hex === null) cache.delete(api);
   return hex;
 }

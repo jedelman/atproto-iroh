@@ -6,7 +6,8 @@
 // merged in JS, not a new aggregating Tauri command — worth revisiting
 // once real usage shows whether that matters.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { usePoll } from "./usePoll";
 import {
   api,
   type ImageView,
@@ -47,10 +48,12 @@ export function useFeed(): FeedState {
     profilesByAuthor: {},
   });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
+  // Monotonic request id (same pattern as useTags) so a slow poll can't
+  // overwrite a fresher one.
+  const requestId = useRef(0);
+  const load = useCallback(async () => {
+    const id = ++requestId.current;
+    {
       const tables = await api.listTables();
       const items: FeedItem[] = [];
       const pinsByTable: Record<string, TagView[]> = {};
@@ -101,15 +104,15 @@ export function useFeed(): FeedState {
 
       items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 
-      if (!cancelled)
+      if (id === requestId.current)
         setState({ loading: false, tables, items, pinsByTable, profilesByAuthor });
     }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+  usePoll(load, 10_000);
 
   return state;
 }

@@ -2,7 +2,7 @@
 // content, the pinned message, and tab switching all actually work,
 // not just that routing resolves to the right component.
 
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
@@ -407,5 +407,77 @@ describe("TableDetail", () => {
 
     expect(screen.queryByText("Sequoia")).not.toBeInTheDocument();
     expect(screen.queryByText("Priya")).not.toBeInTheDocument();
+  });
+});
+
+describe("TableDetail — identity, naming, and refresh", () => {
+  it("pins a message sent moments ago and resolves it to real text", async () => {
+    // The device bug: the optimistic message's subject was built from
+    // the node DID, the real one from the iroh-docs author key, so a
+    // fresh pin pointed at a subject nothing matched and the strip read
+    // "hasn't synced yet". The mock now keeps the two keys distinct, so
+    // mixing them up fails here instead of only on a phone.
+    const id = await api.createNamespaceWithProfile("Pat", "individual", null, "Pin Check");
+    renderTable(id);
+    await waitFor(() => expect(screen.getByText("Pin Check")).toBeInTheDocument());
+
+    await userEvent.type(screen.getByPlaceholderText("Say something…"), "Welcome, read me first");
+    await userEvent.click(screen.getByText("Send"));
+    await screen.findByText("Welcome, read me first");
+
+    await userEvent.click(screen.getByLabelText("Pin this message"));
+
+    await screen.findByText(/Pinned by Pat/);
+
+    // Remount so everything comes from the backend — the optimistic card
+    // and its pin share whatever subject the client computed, so the
+    // mismatch only surfaces once the real message replaces it.
+    cleanup();
+    renderTable(id);
+    const pinnedHeading = await screen.findByText(/Pinned by Pat/);
+    const pinnedCard = pinnedHeading.closest("div")!.parentElement!;
+    await waitFor(() => expect(pinnedCard).toHaveTextContent("Welcome, read me first"));
+    expect(pinnedCard).not.toHaveTextContent("hasn't synced yet");
+  });
+
+  it("lets a founder name a table that was created without one", async () => {
+    const id = await api.createNamespaceWithProfile("Pat", "individual", null);
+    renderTable(id);
+
+    await userEvent.click(await screen.findByText("Name this table"));
+    await userEvent.type(screen.getByLabelText("Table name"), "Old Friends");
+    await userEvent.click(screen.getByText("Save"));
+
+    expect(await screen.findByText("Old Friends")).toBeInTheDocument();
+    expect(screen.getByText("Rename")).toBeInTheDocument();
+    expect((await api.listTables()).find((t) => t.id === id)?.name).toBe("Old Friends");
+  });
+
+  it("offers no rename to someone who didn't found the table", async () => {
+    renderTable(gardenTableId);
+    await waitFor(() => expect(screen.getByText("The Garden Table")).toBeInTheDocument());
+    expect(screen.queryByText("Rename")).not.toBeInTheDocument();
+    expect(screen.queryByText("Name this table")).not.toBeInTheDocument();
+  });
+
+  it("doesn't overwrite unsaved typing when a new revision arrives", async () => {
+    const id = await api.createNamespaceWithProfile("Pat", "individual", null, "Doc Check");
+    await api.docSave(id, "notes", "first version");
+    renderTable(id);
+    await waitFor(() => expect(screen.getByText("Doc Check")).toBeInTheDocument());
+    await userEvent.click(screen.getByText("Shared doc"));
+
+    const box = await screen.findByDisplayValue("first version");
+    await userEvent.clear(box);
+    await userEvent.type(box, "my half-written edit");
+
+    // Someone else's save lands, and the app refreshes (a foreground
+    // tick runs the same refresh the interval does).
+    await api.docSave(id, "notes", "their newer version");
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    // The history shows theirs; the box keeps mine.
+    expect(await screen.findByText("their newer version")).toBeInTheDocument();
+    expect(box).toHaveValue("my half-written edit");
   });
 });

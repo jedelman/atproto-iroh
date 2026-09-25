@@ -190,6 +190,60 @@ async fn node_did(state: State<'_, AppState>) -> Result<Option<String>, String> 
     Ok(state.identity.lock().await.as_ref().map(Identity::did))
 }
 
+/// Hex of the author key that actually signs this device's records — the
+/// only right answer to "is this one mine?". Not `node_did`: that's the
+/// network identity, a different key from the iroh-docs author
+/// (`ensure_author`). The frontend used to derive "self" from `node_did`,
+/// which the mock hid (it used one key for both) and a real phone showed:
+/// pins and photos pointing at records that would never exist, Support /
+/// Object missing for a founder, profile edit not finding your profile.
+#[tauri::command]
+async fn self_author_hex(state: State<'_, AppState>) -> Result<String, String> {
+    let author = ensure_author(&state).await?;
+    Ok(hex::encode(author.as_bytes()))
+}
+
+/// Whether `author` is a genesis member of this Table — the same set
+/// `fold::read_table_name` honors, so this answers "would my name count?"
+async fn is_genesis_member(node: &Node, doc: &Doc, author: AuthorId) -> Result<bool, String> {
+    let founding = fold::read_founding(
+        node,
+        doc,
+        atproto_iroh_core::governance::DEFAULT_FOUNDING_WINDOW_SECONDS,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(founding.is_some_and(|(genesis, _)| genesis.contains(&author)))
+}
+
+/// Names or renames a Table. Refuses anyone but a genesis member rather
+/// than writing a name nobody will ever see (`read_table_name` would
+/// ignore it) — a Table founded before names existed gets named here.
+#[tauri::command]
+async fn set_table_name(
+    state: State<'_, AppState>,
+    namespace_id: String,
+    name: String,
+) -> Result<(), String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("a table needs a name".into());
+    }
+    let author = ensure_author(&state).await?;
+    let node = state.node.lock().await;
+    let node = node.as_ref().ok_or("call spawn_node first")?;
+    let docs = state.docs.lock().await;
+    let doc = docs
+        .get(&namespace_id)
+        .ok_or("unknown namespace — has this node opened it?")?;
+    if !is_genesis_member(node, doc, author).await? {
+        return Err("only a founder can name this table".into());
+    }
+    fold::write_table_name(doc, author, &name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// This UI's own default starting policy for a namespace it founds — a
 /// real answer now, not `placeholder_founding_policy`'s old
 /// not-a-protocol-default heuristic, but still just *this app's* choice
@@ -269,21 +323,28 @@ struct TableView {
     /// by a genesis member (or never founded); the frontend falls back to
     /// a truncated id rather than inventing one.
     name: Option<String>,
+    /// Whether this device's author is a genesis member — i.e. whether a
+    /// `set_table_name` from here would count.
+    can_rename: bool,
 }
 
 /// Every open Table with its resolved display name. Before `spawn_node`
 /// this is empty, same as `list_namespaces`.
 #[tauri::command]
 async fn list_tables(state: State<'_, AppState>) -> Result<Vec<TableView>, String> {
-    let node = state.node.lock().await;
-    let Some(node) = node.as_ref() else {
+    if state.node.lock().await.is_none() {
         return Ok(Vec::new());
-    };
+    }
+    // Before taking the node lock below: ensure_author takes it itself.
+    let author = ensure_author(&state).await?;
+    let node = state.node.lock().await;
+    let node = node.as_ref().ok_or("call spawn_node first")?;
     let docs = state.docs.lock().await;
     let mut tables = Vec::with_capacity(docs.len());
     for (id, doc) in docs.iter() {
         let name = fold::read_table_name(node, doc).await.map_err(|e| e.to_string())?;
-        tables.push(TableView { id: id.clone(), name });
+        let can_rename = is_genesis_member(node, doc, author).await?;
+        tables.push(TableView { id: id.clone(), name, can_rename });
     }
     Ok(tables)
 }
@@ -1082,6 +1143,8 @@ pub fn run() {
             create_namespace_with_profile,
             list_namespaces,
             list_tables,
+            self_author_hex,
+            set_table_name,
             share_namespace,
             join_namespace,
             dump_namespace,

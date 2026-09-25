@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type DocRevision } from "../api";
+import { usePoll } from "./usePoll";
 
 export const TABLE_DOC_ID = "notes";
 
@@ -31,6 +32,7 @@ export function useTableDoc(tableId: string): TableDocState & { refresh: () => P
   useEffect(() => {
     refresh();
   }, [refresh]);
+  usePoll(refresh, 5_000);
 
   return { ...state, refresh };
 }

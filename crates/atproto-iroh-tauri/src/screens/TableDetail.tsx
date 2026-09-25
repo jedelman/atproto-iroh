@@ -17,6 +17,7 @@ import { hasPossibleConflict } from "../lib/docConflict";
 import { resolveSelfAuthorHex } from "../lib/identity";
 import { isPinVisible } from "../lib/mutedPins";
 import { cardStyle, rowCardStyle } from "../lib/cardStyle";
+import type { TableSummary } from "../api/client";
 import {
   api,
   PIN_LABEL,
@@ -40,7 +41,7 @@ export function TableDetail() {
   // own comment for why this is worth a real arrival moment rather than
   // the members list just silently being there.
   const justJoined = Boolean((location.state as { justJoined?: boolean } | null)?.justJoined);
-  const { loading, table, members, pins, messages, images, proposals, eligibleHex, refreshProposals, refreshPins } =
+  const { loading, table, members, pins, messages, images, proposals, eligibleHex, refreshProposals, refreshPins, reload } =
     useTable(id ?? "");
   const [tab, setTab] = useState<Tab>("messages");
 
@@ -48,8 +49,13 @@ export function TableDetail() {
   // BRIEF.md §6: "should all feel immediate... the UI shouldn't
   // visibly wait on network round-trips for local actions." Prepended
   // (newest first, same convention useTable already reverses to).
+  // Once the polled fetch includes a sent message, the optimistic copy
+  // drops out rather than showing twice.
   const [sentMessages, setSentMessages] = useState<MessageView[]>([]);
-  const allMessages = useMemo(() => [...sentMessages, ...messages], [sentMessages, messages]);
+  const allMessages = useMemo(() => {
+    const fetched = new Set(messages.map((m) => m.subject));
+    return [...sentMessages.filter((m) => !fetched.has(m.subject)), ...messages];
+  }, [sentMessages, messages]);
 
   const messageBySubject = useMemo(() => {
     const map = new Map<string, MessageView>();
@@ -83,10 +89,12 @@ export function TableDetail() {
       ),
     [pins, messageBySubject, mutedAuthors],
   );
-  const allImages = useMemo(
-    () => [...uploadedImages, ...images].filter((img) => !mutedAuthors.has(img.author_hex)),
-    [uploadedImages, images, mutedAuthors],
-  );
+  const allImages = useMemo(() => {
+    const fetched = new Set(images.map((img) => img.subject));
+    return [...uploadedImages.filter((img) => !fetched.has(img.subject)), ...images].filter(
+      (img) => !mutedAuthors.has(img.author_hex),
+    );
+  }, [uploadedImages, images, mutedAuthors]);
 
   const { userLabels, tagsBySubject, refresh: refreshTags } = useTags(id ?? "");
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
@@ -131,9 +139,7 @@ export function TableDetail() {
           ← Feed
         </Link>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
-          <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 400 }}>
-            {table.name}
-          </h1>
+          <TableName table={table} onRenamed={reload} />
           <Link
             to={`/table/${id}/invite`}
             style={{ flexShrink: 0, color: "var(--accent)", fontSize: 13, fontWeight: 600, border: "1px solid var(--border)", borderRadius: 999, padding: "5px 12px" }}
@@ -1077,6 +1083,10 @@ function SharedDoc({
 }) {
   const { loading, revisions, refresh } = useTableDoc(tableId);
   const [text, setText] = useState("");
+  // True while the box holds something the person typed or picked with
+  // "Use this" and hasn't saved — polling brings in new revisions every
+  // few seconds, and those must never overwrite in-progress writing.
+  const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -1087,14 +1097,15 @@ function SharedDoc({
   // conflict from someone who only ever clicks the button that shows
   // the text.
   useEffect(() => {
-    if (!loading && latest) setText(latest.text);
-  }, [loading, latest?.rev]);
+    if (!loading && latest && !dirty) setText(latest.text);
+  }, [loading, latest?.rev, dirty]);
 
   async function save() {
     if (!text.trim() || saving) return;
     setSaving(true);
     try {
       await api.docSave(tableId, TABLE_DOC_ID, text);
+      setDirty(false);
       setStatus("saved");
       await refresh();
     } finally {
@@ -1118,6 +1129,7 @@ function SharedDoc({
           value={text}
           onChange={(e) => {
             setText(e.target.value);
+            setDirty(true);
             setStatus(null);
           }}
           rows={6}
@@ -1203,6 +1215,7 @@ function SharedDoc({
                 <button
                   onClick={() => {
                     setText(rev.text);
+                    setDirty(true);
                     setStatus(`loaded ${author?.name ?? "that"} revision into the box — edit and Save to resolve`);
                   }}
                   style={{
@@ -1221,6 +1234,100 @@ function SharedDoc({
             );
           })}
         </div>
+      )}
+    </div>
+  );
+}
+
+// The Table's name, plus a way for a founder to set or change it —
+// fold::read_table_name only counts genesis members' writes, so the
+// control only appears where the backend would honor it (canRename).
+// A Table created before names existed shows its id fallback and
+// "Name this table" for its founder.
+function TableName({ table, onRenamed }: { table: TableSummary; onRenamed: () => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    const name = draft.trim();
+    if (!name || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api.setTableName(table.id, name);
+      await onRenamed();
+      setEditing(false);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          save();
+        }}
+        style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 0 }}
+      >
+        <input
+          autoFocus
+          aria-label="Table name"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+            color: "var(--text)",
+            padding: "7px 10px",
+            fontSize: 16,
+            fontFamily: "var(--font-display)",
+          }}
+        />
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            type="submit"
+            disabled={!draft.trim() || saving}
+            style={{ background: "var(--accent)", color: "var(--ink)", border: "none", borderRadius: 10, padding: "7px 12px", fontSize: 13, fontWeight: 700, opacity: !draft.trim() || saving ? 0.5 : 1 }}
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            style={{ background: "none", border: "none", color: "var(--text-3)", fontSize: 13 }}
+          >
+            Cancel
+          </button>
+        </div>
+        {error && <span role="alert" style={{ fontSize: 12.5, color: "var(--rose)" }}>{error}</span>}
+      </form>
+    );
+  }
+
+  return (
+    <div style={{ minWidth: 0 }}>
+      <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 400, color: table.named ? undefined : "var(--text-3)", overflowWrap: "anywhere" }}>
+        {table.name}
+      </h1>
+      {table.canRename && (
+        <button
+          onClick={() => {
+            setDraft(table.named ? table.name : "");
+            setEditing(true);
+          }}
+          style={{ background: "none", border: "none", padding: 0, marginTop: 4, color: "var(--accent)", fontSize: 12.5, fontWeight: 600 }}
+        >
+          {table.named ? "Rename" : "Name this table"}
+        </button>
       )}
     </div>
   );

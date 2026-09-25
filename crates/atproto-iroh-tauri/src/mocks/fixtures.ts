@@ -24,6 +24,12 @@ import type {
 import { PIN_LABEL } from "../api/types";
 
 export const SELF_AUTHOR_HEX = "5e1f".repeat(16);
+/** This device's *network* identity (`nodeDid`) — deliberately a
+ * different key from SELF_AUTHOR_HEX, the same as on a real device,
+ * where iroh-docs mints its own author key. When the mock used one key
+ * for both, a frontend that derived "self" from nodeDid looked correct
+ * everywhere except on an actual phone. */
+export const SELF_NODE_HEX = "0d1d".repeat(16);
 
 const GARDEN_TABLE_ID = "table-garden0000000000000000000000000000000000000000000000001";
 const HIKERS_TABLE_ID = "table-hikers0000000000000000000000000000000000000000000001";

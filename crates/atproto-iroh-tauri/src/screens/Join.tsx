@@ -51,7 +51,7 @@ export function Join() {
       //
       // A later review pass caught a second, narrower issue: the
       // existence check and the write used to share one try/catch, so
-      // a transient failure in nodeDid()/listProfiles() (not the write
+      // a transient failure in selfAuthorHex()/listProfiles() (not the write
       // itself) would silently skip the write too — reintroducing the
       // very "shows up as Someone" bug this whole fix exists for, now
       // on the common first-join path rather than the rarer re-join

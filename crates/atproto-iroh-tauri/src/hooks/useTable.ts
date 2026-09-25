@@ -3,7 +3,8 @@
 // welcome message if one exists, then Messages, Decisions, Photos,
 // Shared docs."
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { usePoll } from "./usePoll";
 import {
   api,
   type ImageView,
@@ -28,7 +29,11 @@ interface TableState {
 
 export function useTable(
   tableId: string,
-): TableState & { refreshProposals: () => Promise<void>; refreshPins: () => Promise<void> } {
+): TableState & {
+  refreshProposals: () => Promise<void>;
+  refreshPins: () => Promise<void>;
+  reload: () => Promise<void>;
+} {
   const [state, setState] = useState<TableState>({
     loading: true,
     table: null,
@@ -40,10 +45,15 @@ export function useTable(
     eligibleHex: [],
   });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
+  // Reloads everything while the Table is open (usePoll below) — before
+  // this, posts from other devices only appeared after leaving and
+  // coming back. Monotonic request id so a slow reload can't overwrite a
+  // fresher one; `loading` only ever flips false, never back to true, so
+  // a background refresh doesn't blank the screen.
+  const requestId = useRef(0);
+  const reload = useCallback(async () => {
+    const id = ++requestId.current;
+    {
       const [tables, members, pins, messages, images, proposals, governance] = await Promise.all([
         api.listTables(),
         api.listProfiles(tableId),
@@ -53,7 +63,7 @@ export function useTable(
         api.listProposals(tableId),
         api.governanceState(tableId),
       ]);
-      if (cancelled) return;
+      if (id !== requestId.current) return;
       setState({
         loading: false,
         table: tables.find((t) => t.id === tableId) ?? null,
@@ -65,12 +75,12 @@ export function useTable(
         eligibleHex: governance.eligible_hex,
       });
     }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
   }, [tableId]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+  usePoll(reload, 5_000);
 
   // Re-fetches just proposals + governance state — used after creating a
   // decision/poll or signaling on one, so the Decisions tab reflects the
@@ -93,7 +103,7 @@ export function useTable(
     setState((prev) => ({ ...prev, pins }));
   }, [tableId]);
 
-  return { ...state, refreshProposals, refreshPins };
+  return { ...state, refreshProposals, refreshPins, reload };
 }
 
 export function profileFor(members: ProfileView[], authorHex: string): NodeProfile | undefined {

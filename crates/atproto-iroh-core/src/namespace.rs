@@ -263,7 +263,10 @@ impl Node {
     /// yet, the founder holds the whole `NamespaceSecret` until they
     /// share it.
     pub async fn create_namespace(&self) -> Result<Doc> {
-        Ok(self.docs.create().await?)
+        let doc = self.docs.create().await?;
+        // Live from the start, not only once shared — see open_namespace.
+        doc.start_sync(Vec::new()).await?;
+        Ok(doc)
     }
 
     /// A ticket for `mode`, ready to hand to whoever's being granted
@@ -285,8 +288,21 @@ impl Node {
     /// persistent docs store (`spawn_persistent`) still has every
     /// capability this node was ever granted. `list_local_namespaces`
     /// finds the ids; this reopens one of them.
+    ///
+    /// Also starts live sync. iroh-docs' `open` only opens the local
+    /// replica, and a namespace outside its live set turns incoming
+    /// peers away (`AbortReason::NotFound`), so without this a restarted
+    /// phone or relay stopped syncing everything it held until something
+    /// happened to call `share`. `start_sync` with no explicit peers
+    /// still reconnects to the ones iroh-docs remembers as useful for
+    /// this namespace. Proven across a real restart in
+    /// `tests/reopen_sync.rs`.
     pub async fn open_namespace(&self, id: NamespaceId) -> Result<Option<Doc>> {
-        Ok(self.docs.open(id).await?)
+        let Some(doc) = self.docs.open(id).await? else {
+            return Ok(None);
+        };
+        doc.start_sync(Vec::new()).await?;
+        Ok(Some(doc))
     }
 
     /// Every namespace this node currently holds *any* capability into —

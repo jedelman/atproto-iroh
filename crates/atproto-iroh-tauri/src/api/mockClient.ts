@@ -15,6 +15,7 @@ import {
   PROFILES,
   PROPOSALS,
   SELF_AUTHOR_HEX,
+  SELF_NODE_HEX,
   TABLES,
   TABLES_YOU_ARE_IN,
   TAGS,
@@ -61,6 +62,9 @@ const governance: Record<string, typeof GOVERNANCE_STATE[string]> = structuredCl
 const tickets: Record<string, string> = { ...MOCK_TICKETS };
 // Names for Tables created this session (fixture Tables carry their own).
 const createdTableNames: Record<string, string> = {};
+// Tables where you're a genesis member — only those created this session;
+// the fixture Tables were founded by someone else.
+const foundedByYou = new Set<string>();
 
 // Mirrors the real backend's "call spawn_node first": found on the first
 // device install, where nothing ever spawned the node and every command
@@ -86,11 +90,15 @@ function mockRkey() {
 const impl: Client = {
   async spawnNode() {
     nodeSpawned = true;
-    return `did:iroh:${SELF_AUTHOR_HEX}`;
+    return `did:iroh:${SELF_NODE_HEX}`;
   },
 
   async nodeDid() {
-    return nodeSpawned ? `did:iroh:${SELF_AUTHOR_HEX}` : null;
+    return nodeSpawned ? `did:iroh:${SELF_NODE_HEX}` : null;
+  },
+
+  async selfAuthorHex() {
+    return SELF_AUTHOR_HEX;
   },
 
   async listNamespaces() {
@@ -99,10 +107,15 @@ const impl: Client = {
 
   async listTables() {
     if (!nodeSpawned) return [];
-    return [...joinedTableIds].map((id) => ({
-      id,
-      name: TABLES.find((t) => t.id === id)?.name ?? createdTableNames[id] ?? `Table ${id.slice(0, 8)}…`,
-    }));
+    return [...joinedTableIds].map((id) => {
+      const name = TABLES.find((t) => t.id === id)?.name ?? createdTableNames[id];
+      return {
+        id,
+        name: name ?? `Table ${id.slice(0, 8)}…`,
+        named: name !== undefined,
+        canRename: foundedByYou.has(id),
+      };
+    });
   },
 
   async joinNamespace(ticket) {
@@ -121,6 +134,7 @@ const impl: Client = {
   async createNamespaceWithProfile(name, category, avatar, tableName) {
     const id = `table-mock-${mockRkey()}`;
     joinedTableIds.add(id);
+    foundedByYou.add(id);
     // Founder is the sole genesis member, same as fold::found_namespace.
     governance[id] = { eligible_hex: [SELF_AUTHOR_HEX] };
     const trimmed = tableName?.trim();
@@ -142,6 +156,13 @@ const impl: Client = {
     const ticket = `mock-ticket-${mode.toLowerCase()}-${namespaceId}`;
     tickets[ticket] = namespaceId;
     return ticket;
+  },
+
+  async setTableName(namespaceId, name) {
+    if (!foundedByYou.has(namespaceId)) throw new Error("only a founder can name this table");
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error("a table needs a name");
+    createdTableNames[namespaceId] = trimmed;
   },
 
   async ticketToQr(ticket) {
