@@ -438,6 +438,20 @@ shared-mock-state reason the governance tests above are.
 *generation* (`ticket_to_qr` — scanning is built, Join screen above),
 the raw inspector, relay/control.
 
+**First on-device install (2026-09-25) exposed three bigger gaps than
+that list**, now mapped in [`USER_FLOW.md`](USER_FLOW.md) (a Mermaid
+screen map plus a step-by-step of the minimum two-phone loop, built
+from the actual routes and `api.*` calls rather than intent). In order
+of severity: nothing ever calls `spawn_node` on a device, so every
+backend command except `list_namespaces`/`node_did` fails with "call
+spawn_node first"; there's no UI to create a Table (the Feed's
+"…or start your own." is unlinked text); and there's no way to invite
+anyone (`share_namespace`/`ticket_to_qr` exist in Rust with no `Client`
+method). All three were invisible to every test and screenshot because
+`mockClient` starts everyone already inside pre-joined Tables and never
+needs `spawnNode` — `USER_FLOW.md` §4 has the test that would have
+caught it.
+
 **Design-interview edge cases fleshed out (2026-09-24)**, following a
 gap check against `.impeccable.md`/`DESIGN_BRIEF.md` after the
 `/simplify` pass above — three real, previously-flagged gaps closed:
