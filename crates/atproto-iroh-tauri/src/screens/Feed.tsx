@@ -148,7 +148,29 @@ export function Feed() {
             ))}
             <Link
               to="/join"
-              aria-label="Join or start a table"
+              aria-label="Join a table"
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flexShrink: 0 }}
+            >
+              <div
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: "50%",
+                  border: "1.5px dashed var(--border)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth={2} strokeLinecap="round">
+                  <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3" />
+                </svg>
+              </div>
+              <span style={{ fontSize: 10.5, color: "var(--text-3)", fontWeight: 500 }}>Join</span>
+            </Link>
+                        <Link
+              to="/new"
+              aria-label="Start a table"
               style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flexShrink: 0 }}
             >
               <div
@@ -166,7 +188,7 @@ export function Feed() {
                   <path d="M12 5v14M5 12h14" />
                 </svg>
               </div>
-              <span style={{ fontSize: 10.5, color: "var(--text-3)", fontWeight: 500 }}>Join</span>
+              <span style={{ fontSize: 10.5, color: "var(--text-3)", fontWeight: 500 }}>Start</span>
             </Link>
           </div>
 
@@ -277,7 +299,11 @@ function EmptyTablesState() {
         <Link to="/join" style={{ color: "var(--accent)", fontWeight: 600 }}>
           Scan a code
         </Link>{" "}
-        to join one, or start your own.
+        to join one, or{" "}
+        <Link to="/new" style={{ color: "var(--accent)", fontWeight: 600 }}>
+          start your own
+        </Link>
+        .
       </p>
     </div>
   );

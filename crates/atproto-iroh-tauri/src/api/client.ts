@@ -26,14 +26,17 @@ import type {
 
 export interface TableSummary {
   id: string;
-  /** Best-effort display name. Real backend has no "Table name" record
-   * yet (DESIGN_BRIEF.md's Open Questions) — tauriClient's
-   * implementation is an honest fallback (a truncated id), not a real
-   * name; mockClient returns the canonical fixture names. */
+  /** A genesis member's `table/name` entry (`fold::read_table_name`),
+   * or a truncated id when there isn't one — never an invented name. */
   name: string;
 }
 
 export interface Client {
+  /** Starts (or, if already running, no-ops) this device's node and
+   * reloads every Table it holds. Every other call that touches a Table
+   * fails until this has resolved once — App.tsx gates the whole UI on
+   * it. `nodeDid`/`listNamespaces`/`listTables` answer null/empty before
+   * it instead of failing, same as the real backend. */
   spawnNode(): Promise<string>;
   nodeDid(): Promise<string | null>;
   listNamespaces(): Promise<string[]>;
@@ -42,11 +45,21 @@ export interface Client {
   /** Imports a Table from a shared ticket string (scanned or pasted).
    * Returns the new Table's id. */
   joinNamespace(ticket: string): Promise<string>;
+  /** Founds a new Table: your profile, a `Founding` claim naming you as
+   * its sole genesis member, and (optionally) its display name — see
+   * `fold::read_table_name` for why only a genesis member's name counts. */
   createNamespaceWithProfile(
     name: string,
     category: NodeCategory,
     avatar: string | null,
+    tableName?: string,
   ): Promise<string>;
+  /** A join ticket for this Table. "Write" is what an invited member
+   * needs to post; "Read" suits a relay. A ticket is a bearer secret
+   * (SPEC.md §3.4): whoever holds it has that access. */
+  shareTable(namespaceId: string, mode: "Read" | "Write"): Promise<string>;
+  /** Renders a ticket as SVG markup (the Rust `qrcode` crate). */
+  ticketToQr(ticket: string): Promise<string>;
   updateProfile(
     namespaceId: string,
     profile: Omit<NodeProfile, "created_at">,

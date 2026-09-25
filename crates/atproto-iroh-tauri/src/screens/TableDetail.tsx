@@ -130,9 +130,17 @@ export function TableDetail() {
         <Link to="/feed" style={{ color: "var(--text-3)", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 14 }}>
           ← Feed
         </Link>
-        <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 400 }}>
-          {table.name}
-        </h1>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+          <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 400 }}>
+            {table.name}
+          </h1>
+          <Link
+            to={`/table/${id}/invite`}
+            style={{ flexShrink: 0, color: "var(--accent)", fontSize: 13, fontWeight: 600, border: "1px solid var(--border)", borderRadius: 999, padding: "5px 12px" }}
+          >
+            Invite
+          </Link>
+        </div>
       </div>
 
       {/* Members-first landing — the primary action */}

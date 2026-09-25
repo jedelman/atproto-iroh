@@ -216,6 +216,51 @@ pub async fn fold_namespace(
     fold(node, doc, founding_eligible, founding_policy, now).await
 }
 
+/// Well-known freeform-text key a Table's display name lives at —
+/// DESIGN_BRIEF.md §9's proposal, made real: `namespace::put_text` at a
+/// fixed key, no new record type or lexicon.
+pub const TABLE_NAME_KEY: &str = "table/name";
+
+/// Writes a Table's display name under `author`. Anyone holding a write
+/// capability *can* call this, but `read_table_name` only honors a
+/// genesis member's entry, so a non-founder writing here changes nothing
+/// anyone else sees.
+pub async fn write_table_name(doc: &Doc, author: AuthorId, name: &str) -> Result<()> {
+    crate::namespace::put_text(doc, author, TABLE_NAME_KEY, name).await?;
+    Ok(())
+}
+
+/// A Table's display name: the newest `TABLE_NAME_KEY` entry written by
+/// any genesis member (`read_founding`'s eligible set). Every author has
+/// their own slot at every key (`RecordIdentifier`, SPEC.md §3.4), so
+/// "whose entry counts" has to be decided somewhere — the founding
+/// record already answers "who started this," and reusing it means a
+/// later member can't rename the Table out from under the group without
+/// a new governance mechanism. `None` if the namespace was never founded
+/// or no genesis member ever named it.
+pub async fn read_table_name(node: &Node, doc: &Doc) -> Result<Option<String>> {
+    let Some((genesis, _policy)) =
+        read_founding(node, doc, governance::DEFAULT_FOUNDING_WINDOW_SECONDS).await?
+    else {
+        return Ok(None);
+    };
+    let mut newest: Option<(u64, String)> = None;
+    for author in genesis {
+        let Some(entry) = doc
+            .get_exact(author, TABLE_NAME_KEY.as_bytes().to_vec(), false)
+            .await?
+        else {
+            continue;
+        };
+        let bytes = node.blob_store().get_bytes(entry.content_hash()).await?;
+        let name = String::from_utf8(bytes.to_vec())?;
+        if newest.as_ref().map_or(true, |(ts, _)| entry.timestamp() > *ts) {
+            newest = Some((entry.timestamp(), name));
+        }
+    }
+    Ok(newest.map(|(_, name)| name))
+}
+
 /// Posts a new `Proposal` under `author`, generating its `rkey`. Returns
 /// the `rkey` so the caller can build `subject_ref`s for `Signal`s that
 /// respond to it.

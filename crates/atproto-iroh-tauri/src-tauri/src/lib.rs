@@ -223,6 +223,7 @@ async fn create_namespace_with_profile(
     name: String,
     category: NodeCategory,
     avatar: Option<String>,
+    table_name: Option<String>,
 ) -> Result<String, String> {
     let author = ensure_author(&state).await?;
     let node = state.node.lock().await;
@@ -247,9 +248,44 @@ async fn create_namespace_with_profile(
         .await
         .map_err(|e| e.to_string())?;
 
+    // After the Founding claim, not before — fold::read_table_name only
+    // honors a genesis member's entry, and this author isn't one until
+    // that claim exists.
+    if let Some(table_name) = table_name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+        fold::write_table_name(&doc, author, table_name)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
     let namespace_id = doc.id().to_string();
     state.docs.lock().await.insert(namespace_id.clone(), doc);
     Ok(namespace_id)
+}
+
+#[derive(serde::Serialize)]
+struct TableView {
+    id: String,
+    /// `fold::read_table_name` — `None` for a Table that was never named
+    /// by a genesis member (or never founded); the frontend falls back to
+    /// a truncated id rather than inventing one.
+    name: Option<String>,
+}
+
+/// Every open Table with its resolved display name. Before `spawn_node`
+/// this is empty, same as `list_namespaces`.
+#[tauri::command]
+async fn list_tables(state: State<'_, AppState>) -> Result<Vec<TableView>, String> {
+    let node = state.node.lock().await;
+    let Some(node) = node.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let docs = state.docs.lock().await;
+    let mut tables = Vec::with_capacity(docs.len());
+    for (id, doc) in docs.iter() {
+        let name = fold::read_table_name(node, doc).await.map_err(|e| e.to_string())?;
+        tables.push(TableView { id: id.clone(), name });
+    }
+    Ok(tables)
 }
 
 /// Every namespace this node currently holds open — same list `dist/`
@@ -1045,6 +1081,7 @@ pub fn run() {
             node_did,
             create_namespace_with_profile,
             list_namespaces,
+            list_tables,
             share_namespace,
             join_namespace,
             dump_namespace,

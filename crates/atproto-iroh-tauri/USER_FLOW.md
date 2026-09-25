@@ -1,4 +1,4 @@
-# User flow — what's actually wired (2026-09-25)
+# User flow — what's actually wired (updated 2026-09-25)
 
 A sanity-check map of the React frontend's real navigation and backend
 calls, built by reading the code: every route in `src/App.tsx`, every
@@ -17,15 +17,16 @@ exist.
 ```mermaid
 flowchart TD
   Launch([App launch]) --> Root{"Profile draft in<br/>localStorage?"}
+  Launch -. "NodeGate: spawn_node first ·<br/>'Settling in…' or error + Try again" .-> Root
   Root -- no --> Onboarding["Onboarding<br/>pick sticker + name"]
   Root -- yes --> Feed
   Onboarding -- "Looks like me<br/>(localStorage only — no backend call)" --> Feed
 
   Feed["Feed<br/>merged timeline · Table/tag filter chips"]
   Feed -- "tap a Table in the strip" --> Table
-  Feed -- "+ Join · 'Scan a code'" --> Join
+  Feed -- "Join tile · 'Scan a code'" --> Join
+  Feed -- "Start tile · 'start your own'" --> CreateTable
   Feed -- "tap your own avatar" --> Mute["Mute<br/>add / remove author"]
-  Feed -. "'…or start your own.' is plain text, not a link" .-> CreateTable
 
   Join["Join<br/>scan QR or paste ticket"] -- "joinNamespace<br/>+ write draft profile if none yet" --> Table
   Join -- "← Feed" --> Feed
@@ -33,6 +34,9 @@ flowchart TD
 
   Table["Table detail<br/>members · pinned strip · tabs"]
   Table -- "Edit your profile" --> Profile["Profile edit<br/>(per-Table)"]
+  Table -- "Invite" --> Share
+  CreateTable -- "profile + Founding + name" --> Share
+  Share -- "Go to the table · Done" --> Table
   Profile -- "← Back" --> Table
   Table -- "← Feed" --> Feed
   Table --> Messages & Decisions & Photos & Doc
@@ -42,11 +46,10 @@ flowchart TD
   Photos["Photos<br/>upload · tag"]
   Doc["Shared doc<br/>save · history · 'Use this' · tag"]
 
-  Table -. "no invite / share control anywhere" .-> Share
   Feed -. "no settings entry point" .-> Advanced
 
-  CreateTable["Create a Table"]:::missing
-  Share["Invite people:<br/>share ticket + show QR"]:::missing
+  CreateTable["Start a table<br/>name it · you're its founder"]
+  Share["Invite<br/>Write ticket as QR + copyable code"]
   Advanced["Advanced: raw inspector ·<br/>relay/control · your did:iroh"]:::missing
 
   classDef missing stroke-dasharray: 6 4,stroke:#c0504d,color:#c0504d;
@@ -55,9 +58,10 @@ flowchart TD
 ## 2. The minimum real loop, step by step
 
 The smallest thing the app has to do for real: one person starts a
-Table and a second person joins it. Here's each step's status **on a
-device, against the real Tauri backend**. The mock backend used by
-`npm run dev` and every test can't show any of these failures (see §4).
+Table and a second person joins it. Every step is now wired end to end
+and run against the mock (`CreateTable.test.tsx`), with the Rust pieces
+covered by core tests. Still unproven: two real phones reaching each
+other. That's only ever been tested between two nodes on one machine.
 
 ```mermaid
 sequenceDiagram
@@ -65,17 +69,26 @@ sequenceDiagram
   participant A as Alice's phone
   participant B as Bob's phone
 
-  Note over A,B: App start — nothing calls spawn_node (BLOCKER, see §3)
+  Note over A,B: App start — NodeGate calls spawn_node before any screen ✓
   A->>A: Onboarding — sticker + name saved to localStorage ✓
-  A-xA: Create a Table — no UI (create_namespace_with_profile exists, unwired)
-  A-xA: Invite Bob — no Client method (share_namespace + ticket_to_qr exist, unwired)
-  A--)B: ticket handed over out of band (would be the QR)
-  B->>B: Join screen — scan or paste ✓ UI
-  B-xB: join_namespace → "call spawn_node first" until the blocker is fixed
-  B->>A: sync — proven live in core's two-node integration tests
+  A->>A: Start a table — profile + Founding + table/name ✓
+  A->>A: Invite — share_namespace (Write) + ticket_to_qr ✓
+  A--)B: Bob scans Alice's screen (or she sends the code)
+  B->>B: Join — scan or paste → join_namespace ✓
+  B->>A: sync — proven in core's two-node tests, phone↔phone not yet tried
 ```
 
 ## 3. Gaps, ranked by how hard they block the loop
+
+**#1–#4 fixed the same day** (kept below as a record, not deleted):
+`App.tsx`'s `NodeGate` calls `spawn_node` before any screen renders,
+with a real error and Try again; `/new` (Start a table) and
+`/table/:id/invite` (QR + copyable Write ticket) are real screens,
+reachable from the Feed strip, the Feed empty state, and the Table
+header; and core's `fold::write_table_name`/`read_table_name` resolve a
+Table's name from genesis members only (`tests/table_name.rs` proves a
+non-founder's write is ignored), surfaced by a new `list_tables`
+command. #5 is still open.
 
 | # | Gap | Where it lives | What exists already |
 |---|-----|----------------|---------------------|
@@ -85,7 +98,7 @@ sequenceDiagram
 | 4 | **Tables have no names on the real backend.** You'd see `Table a1b2c3d4…`. | `tauriClient.listTables`'s honest fallback. | DESIGN_BRIEF.md §9 has the proposed fix (`put_text` at a well-known `table/name` key, written by the founder). Creating a Table (#2) is the natural place to set it. |
 | 5 | No Advanced surface (raw inspector, relay/control, showing your `did:iroh`). | README's "Not yet ported". | `dump_namespace`, the control endpoint, `node_did`. |
 
-## 4. Why the tests didn't catch #1–#3
+## 4. Why the tests didn't catch #1–#3 (and what changed)
 
 `mockClient` is a stand-in for the whole backend: its `spawnNode` is a
 no-op nothing depends on, its Tables arrive pre-joined with fixture
@@ -96,3 +109,10 @@ with #1–#3: a test that starts from an empty mock world, creates a Table
 through the UI, shares it, and joins it from a second mock "device."
 Also make the mock refuse calls until `spawnNode` has run, the way the
 real backend does.
+
+**Both done**: the mock now throws "call spawn_node first" for every
+Table call until spawned, and answers `nodeDid`/`listTables` with
+null/empty the way the real backend does (`App.test.tsx`).
+`CreateTable.test.tsx` runs the loop from nothing: start a named Table,
+get a redeemable invite, land in it as a founder who can weigh in on
+decisions.

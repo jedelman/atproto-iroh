@@ -406,7 +406,12 @@ the Onboarding name/sticker" test can fail if another test joins the
 same Book Club table first in a shuffled order, since Join.tsx's own
 "don't clobber an existing profile" check then correctly skips writing
 the draft profile — flagged here rather than silently left for the
-next person to rediscover, not fixed in this pass.
+next person to rediscover, not fixed in this pass. **Fixed 2026-09-25**
+with a third join-demo fixture Table (the knitting circle) no other
+test joins, alongside a same-pattern fix in `ProfileEdit.test.tsx`
+(its save test renamed "Theo" on the same Table the prefill test
+reads); the full suite now passes under `--sequence.shuffle` across 8
+seeds, not just in file order.
 
 **Tagging on Images/Shared docs — built (2026-09-24).** The gap wasn't
 purely frontend this time, unlike reply-to and the governance forms:
@@ -451,6 +456,20 @@ method). All three were invisible to every test and screenshot because
 `mockClient` starts everyone already inside pre-joined Tables and never
 needs `spawnNode` — `USER_FLOW.md` §4 has the test that would have
 caught it.
+
+**All three fixed the same day.** `App.tsx`'s `NodeGate` spawns the
+node before any screen renders (error + Try again on failure). New
+screens: `/new` (Start a table — you're its founder, and you name it)
+and `/table/:id/invite` (a Write ticket as a QR from Rust's `qrcode`
+crate, plus a copyable code, with copy saying plainly that the code is
+the access), reachable from a Start tile beside Join, the Feed's empty
+state, and an Invite button in every Table's header. Tables now have
+real names: core's `fold::write_table_name`/`read_table_name` store the
+name at a `table/name` key and only honor a genesis member's entry, so
+another member can't rename it for everyone (`tests/table_name.rs`); a
+new `list_tables` Tauri command returns it. The mock now refuses Table
+calls until spawned, like the real backend (`App.test.tsx`), and
+`CreateTable.test.tsx` runs the loop from nothing.
 
 **Design-interview edge cases fleshed out (2026-09-24)**, following a
 gap check against `.impeccable.md`/`DESIGN_BRIEF.md` after the

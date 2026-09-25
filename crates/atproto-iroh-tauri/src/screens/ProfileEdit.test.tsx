@@ -28,7 +28,10 @@ describe("ProfileEdit", () => {
   });
 
   it("edits the name and saves, showing confirmation", async () => {
-    renderProfileEdit(gardenTableId);
+    // Weekend Hikers, not Garden: the save persists in mockClient's
+    // module-level state, so editing Garden renamed "Theo" out from under
+    // the prefill test above whenever --sequence.shuffle ran this first.
+    renderProfileEdit(TABLES[1].id);
     await waitFor(() => expect(screen.getByDisplayValue("Theo")).toBeInTheDocument());
 
     const nameInput = screen.getByDisplayValue("Theo");

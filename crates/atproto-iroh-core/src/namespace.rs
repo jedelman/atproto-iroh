@@ -247,7 +247,7 @@ impl Node {
         &self.docs
     }
 
-    fn blob_store(&self) -> BlobStore {
+    pub(crate) fn blob_store(&self) -> BlobStore {
         self.blobs.clone()
     }
 

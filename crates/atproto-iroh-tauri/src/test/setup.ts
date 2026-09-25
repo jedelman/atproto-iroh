@@ -20,3 +20,12 @@ if (typeof URL !== "undefined" && !URL.createObjectURL) {
   URL.createObjectURL = () => "blob:mock-url";
   URL.revokeObjectURL = () => {};
 }
+
+// Screen tests render screens directly, not through App's NodeGate, so
+// spawn the mock node once per test file here — the mock refuses Table
+// calls until it has, the same as the real backend (mockClient.ts).
+import { beforeAll } from "vitest";
+import { mockClient } from "../api/mockClient";
+beforeAll(async () => {
+  await mockClient.spawnNode();
+});

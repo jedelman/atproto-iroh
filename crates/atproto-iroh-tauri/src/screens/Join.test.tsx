@@ -38,10 +38,11 @@ describe("Join", () => {
       JSON.stringify({ name: "Nia", avatar: "sky" }),
     );
     renderJoin();
-    await userEvent.type(screen.getByPlaceholderText("Paste the ticket text here"), "mock-ticket-bookclub");
+    // Its own Table (fixtures.ts's knitting circle) — see that id's comment.
+    await userEvent.type(screen.getByPlaceholderText("Paste the ticket text here"), "mock-ticket-knitting");
     await userEvent.click(screen.getByText("Join with this ticket"));
 
-    await waitFor(() => expect(screen.getByText("Thursday Book Club")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Tuesday Knitting Circle")).toBeInTheDocument());
     expect(await screen.findByText("Nia")).toBeInTheDocument();
   });
 

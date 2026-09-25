@@ -55,6 +55,21 @@ const imageBytes = new Map<string, number[]>();
 // Not per-Table — mute::MuteList's doc comment: "local only, no sync,
 // no lexicon," a reader's own client-side filter, same in the mock.
 const mutedAuthors = new Set<string>();
+const governance: Record<string, typeof GOVERNANCE_STATE[string]> = structuredClone(GOVERNANCE_STATE);
+// Mutable copy so shareTable can mint tickets for Tables created this
+// session and joinNamespace can redeem them.
+const tickets: Record<string, string> = { ...MOCK_TICKETS };
+// Names for Tables created this session (fixture Tables carry their own).
+const createdTableNames: Record<string, string> = {};
+
+// Mirrors the real backend's "call spawn_node first": found on the first
+// device install, where nothing ever spawned the node and every command
+// failed — invisible here until now because the mock never cared.
+let nodeSpawned = false;
+/** Test-only: put the mock back in its pre-spawn state. */
+export function resetMockNodeForTests() {
+  nodeSpawned = false;
+}
 
 function imageBytesKey(namespaceId: string, authorHex: string, rkey: string) {
   return `${namespaceId}/${authorHex}/${rkey}`;
@@ -68,25 +83,30 @@ function mockRkey() {
   return String(Date.now() * 1000 + nextRkeySeq++).padStart(19, "0");
 }
 
-export const mockClient: Client = {
+const impl: Client = {
   async spawnNode() {
+    nodeSpawned = true;
     return `did:iroh:${SELF_AUTHOR_HEX}`;
   },
 
   async nodeDid() {
-    return `did:iroh:${SELF_AUTHOR_HEX}`;
+    return nodeSpawned ? `did:iroh:${SELF_AUTHOR_HEX}` : null;
   },
 
   async listNamespaces() {
-    return [...joinedTableIds];
+    return nodeSpawned ? [...joinedTableIds] : [];
   },
 
   async listTables() {
-    return TABLES.filter((t) => joinedTableIds.has(t.id)).map(({ id, name }) => ({ id, name }));
+    if (!nodeSpawned) return [];
+    return [...joinedTableIds].map((id) => ({
+      id,
+      name: TABLES.find((t) => t.id === id)?.name ?? createdTableNames[id] ?? `Table ${id.slice(0, 8)}…`,
+    }));
   },
 
   async joinNamespace(ticket) {
-    const tableId = MOCK_TICKETS[ticket.trim()];
+    const tableId = tickets[ticket.trim()];
     if (!tableId) {
       throw new Error("invalid ticket");
     }
@@ -98,8 +118,13 @@ export const mockClient: Client = {
     return tableId;
   },
 
-  async createNamespaceWithProfile(name, category, avatar) {
+  async createNamespaceWithProfile(name, category, avatar, tableName) {
     const id = `table-mock-${mockRkey()}`;
+    joinedTableIds.add(id);
+    // Founder is the sole genesis member, same as fold::found_namespace.
+    governance[id] = { eligible_hex: [SELF_AUTHOR_HEX] };
+    const trimmed = tableName?.trim();
+    if (trimmed) createdTableNames[id] = trimmed;
     profiles[id] = {
       [SELF_AUTHOR_HEX]: {
         name,
@@ -110,6 +135,21 @@ export const mockClient: Client = {
     };
     messages[id] = [];
     return id;
+  },
+
+  async shareTable(namespaceId, mode) {
+    if (!joinedTableIds.has(namespaceId)) throw new Error("unknown namespace — has this node opened it?");
+    const ticket = `mock-ticket-${mode.toLowerCase()}-${namespaceId}`;
+    tickets[ticket] = namespaceId;
+    return ticket;
+  },
+
+  async ticketToQr(ticket) {
+    // No QR encoder in the frontend on purpose (the real one is Rust's
+    // qrcode crate) — so the mock renders a labeled stand-in rather than
+    // a fake code a phone might try, and fail, to scan.
+    const label = ticket.length > 28 ? `${ticket.slice(0, 28)}…` : ticket;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" fill="#ffffff"/><rect x="16" y="16" width="224" height="224" fill="none" stroke="#000" stroke-width="4" stroke-dasharray="10 8"/><text x="128" y="120" font-family="sans-serif" font-size="16" text-anchor="middle">QR (dev mock)</text><text x="128" y="148" font-family="monospace" font-size="9" text-anchor="middle">${label.replace(/[<>&"]/g, "")}</text></svg>`;
   },
 
   async updateProfile(namespaceId, profile) {
@@ -179,7 +219,7 @@ export const mockClient: Client = {
   },
 
   async governanceState(namespaceId) {
-    return GOVERNANCE_STATE[namespaceId] ?? { eligible_hex: [] };
+    return governance[namespaceId] ?? { eligible_hex: [] };
   },
 
   async createDecision(namespaceId, title, deadlineHours, extra) {
@@ -274,3 +314,25 @@ export const mockClient: Client = {
     return [...mutedAuthors];
   },
 };
+
+const UNGUARDED = new Set<string>([
+  "spawnNode",
+  "nodeDid",
+  "listNamespaces",
+  "listTables",
+  "ticketToQr",
+  "muteAuthor",
+  "unmuteAuthor",
+  "listMuted",
+]);
+
+export const mockClient: Client = new Proxy(impl, {
+  get(target, prop, receiver) {
+    const value = Reflect.get(target, prop, receiver);
+    if (typeof value !== "function" || UNGUARDED.has(String(prop))) return value;
+    return async (...args: unknown[]) => {
+      if (!nodeSpawned) throw new Error("call spawn_node first");
+      return (value as (...a: unknown[]) => unknown).apply(target, args);
+    };
+  },
+});

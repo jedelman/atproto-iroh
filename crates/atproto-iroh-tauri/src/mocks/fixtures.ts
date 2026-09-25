@@ -37,6 +37,12 @@ const BOOKCLUB_TABLE_ID = "table-bookclub000000000000000000000000000000000000000
 // mockClient's shared module-level state made a real, fragile ordering
 // requirement — found in a code-review pass.
 const PHOTOCLUB_TABLE_ID = "table-photoclub0000000000000000000000000000000000000000001";
+// A third, for Join.test.tsx's "carries the Onboarding name" test: it
+// asserts the draft profile gets *written*, which only happens when no
+// profile exists yet — so it needs a Table no other test ever joins,
+// found via --sequence.shuffle when a plain join of the book club ran
+// first and wrote one.
+const KNITTING_TABLE_ID = "table-knitting00000000000000000000000000000000000000000001";
 
 export const AUTHORS = {
   you: SELF_AUTHOR_HEX,
@@ -87,13 +93,18 @@ export const TABLES: MockTable[] = [
     name: "Weekend Photo Club",
     memberAuthorHexes: [AUTHORS.devon],
   },
+  {
+    id: KNITTING_TABLE_ID,
+    name: "Tuesday Knitting Circle",
+    memberAuthorHexes: [AUTHORS.priya],
+  },
 ];
 
 /** Which Tables "you" (SELF_AUTHOR_HEX) already hold a capability into
  * before any mock join happens — everything in TABLES except the ones
  * reserved for the join demo. `mockClient.ts`'s `listTables`/
  * `listNamespaces` are scoped to this, not all of `TABLES`. */
-const JOIN_DEMO_TABLE_IDS = new Set([BOOKCLUB_TABLE_ID, PHOTOCLUB_TABLE_ID]);
+const JOIN_DEMO_TABLE_IDS = new Set([BOOKCLUB_TABLE_ID, PHOTOCLUB_TABLE_ID, KNITTING_TABLE_ID]);
 export const TABLES_YOU_ARE_IN = TABLES.filter((t) => !JOIN_DEMO_TABLE_IDS.has(t.id)).map((t) => t.id);
 
 /** Fake "tickets" the mock Join/QR-scan flow accepts — stand-ins for a
@@ -104,6 +115,7 @@ export const TABLES_YOU_ARE_IN = TABLES.filter((t) => !JOIN_DEMO_TABLE_IDS.has(t
 export const MOCK_TICKETS: Record<string, string> = {
   "mock-ticket-bookclub": BOOKCLUB_TABLE_ID,
   "mock-ticket-photoclub": PHOTOCLUB_TABLE_ID,
+  "mock-ticket-knitting": KNITTING_TABLE_ID,
 };
 
 export const PROFILES: Record<string, NodeProfile> = {
