@@ -35,6 +35,8 @@ about current state; this file stays high-level on purpose. Full design
 record in [`SPEC.md`](SPEC.md); four draft lexicon schemas in
 [`lexicons/`](lexicons/README.md).
 
+**Before using this with anyone: read [`THREAT_MODEL.md`](THREAT_MODEL.md).** It covers what removal does and doesn't do, what an invite reveals, and what this is not for (a public social network). Unaudited lab build.
+
 ## What this actually is
 
 No public index, no relay, no firehose. A peer who hasn't been granted a
