@@ -99,6 +99,65 @@ removal), conflict resolution is cheap, and exit is always possible. The
 governance layer has most of the primitives. The product work to make
 them usable is not done.
 
+## Object lesson: harassment that stays under the rules
+
+On 2026-10-02 a public Bluesky thread laid out, from the targets' side, a
+long-running harassment pattern on a large platform. We aren't
+adjudicating that dispute, and this document names no one in it. The
+tactics the thread describes are the useful part, because each one maps
+onto something specific here:
+
+1. **Every single post is defensible; the harm is the pattern.** The
+   thread describes someone who "knows just what lines to come in under."
+   Rule-by-rule moderation can't see a pattern made of individually
+   acceptable posts. A small group can: removal here (`RemoveCoSigner`,
+   objection window) is a judgment about a *person over time*, made by
+   people who watched it happen, not a ruling on one post. This is the
+   one place small scale is a real advantage. It only works if the
+   group is small enough that people actually see each other.
+2. **A few defenders inside the group provide cover.** The thread
+   describes a handful of members from the targeted group vouching for
+   the person they describe. Here, those allies can file enough objections to block
+   a removal. The remedy is fission: the targets leave, keeping their own
+   signed records, and start a new Table without that person. Nobody owns the
+   room, so nobody can hold it hostage. That remedy only helps once
+   "re-found without X" is one action instead of a chore.
+3. **Amplification by a network of boosters.** Tables have no reposts,
+   no public audience and no algorithm, so that vector doesn't exist
+   *inside* a Table. But a private, unmoderated group is exactly where a
+   dogpile somewhere else gets organized. Nothing here can stop a Table
+   from being used as that backchannel, any more than Signal or Discord
+   can. Say so; don't pretend otherwise.
+4. **Digging through months of someone's history to find where they
+   live.** This is the sharpest lesson. A hostile member of a Table
+   doesn't have to dig, because the app hands them a complete, local,
+   searchable archive:
+   - Every new member receives the Table's **full history** from day one
+     (`SPEC.md` §6 item 10).
+   - **Photos keep their metadata.** The Photos tab uploads the file's
+     raw bytes (`TableDetail.tsx`: `file.arrayBuffer()` straight into
+     `upload_image`; `images.rs` stores them unchanged), so EXIF data,
+     including GPS coordinates when the camera recorded them, reaches
+     every member. Android may redact location from picked photos for
+     apps without the media-location permission; we haven't verified
+     that, and desktop does no such thing.
+   - Invitations carry the inviter's IP addresses (see "Invitations").
+   - None of it can be taken back after removal.
+5. **Screenshots as evidence, both ways.** The thread is built from
+   screenshots. Anything said in a Table can leave it the same way.
+   One difference from ordinary chat: every entry here is **signed by
+   its author**, so an exported record can be checked cryptographically
+   rather than argued over. That protects against forged screenshots,
+   and it also means nothing you say is deniable. Members should know
+   that before they speak, not after.
+6. **One person, many accounts.** A `did:iroh` is just a key, and anyone
+   with write access can mint as many author keys as they like
+   (`Node::author_create`). Governance resists this: only governance-
+   eligible authors' signals count (`fold.rs`, `state.eligible`).
+   Messages, tags and pins don't. One person can appear as several
+   members with self-chosen display names, and "one pin per author" is
+   really one pin per key.
+
 ## Hosting and illegal content
 
 Every member's device stores and re-serves what the Table contains,
@@ -125,6 +184,15 @@ Until each item is done, the release is a lab build:
       statement of what X keeps.
 - [ ] Invite QR codes either drop direct addresses or warn that they
       include them.
+- [ ] Strip photo metadata (EXIF, including GPS) on upload, before the
+      bytes are written.
+- [ ] Decide what new members see: full history by default is a choice,
+      not a law. At minimum, tell the group when someone new will
+      receive everything.
+- [ ] Tell people, in the app, that what they write is signed and can't
+      be denied later.
+- [ ] Show which members are governance-eligible, so a crowd of
+      unfamiliar keys is visible as that.
 - [ ] This document linked from the app's onboarding, not just the repo.
 - [ ] No hosted relays for strangers.
 - [ ] An outside review of the code and this document.
