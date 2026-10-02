@@ -57,7 +57,10 @@ fn strip_jpeg(bytes: &[u8]) -> Result<Vec<u8>> {
     loop {
         // Every marker is 0xFF followed by a code; any number of 0xFF
         // fill bytes may precede it.
-        ensure!(i < bytes.len() && bytes[i] == 0xFF, "expected a marker at byte {i}");
+        ensure!(
+            i < bytes.len() && bytes[i] == 0xFF,
+            "expected a marker at byte {i}"
+        );
         while i < bytes.len() && bytes[i] == 0xFF {
             i += 1;
         }
@@ -79,7 +82,10 @@ fn strip_jpeg(bytes: &[u8]) -> Result<Vec<u8>> {
             _ => {
                 ensure!(i + 2 <= bytes.len(), "segment length missing");
                 let len = u16::from_be_bytes([bytes[i], bytes[i + 1]]) as usize;
-                ensure!(len >= 2 && i + len <= bytes.len(), "segment runs past end of file");
+                ensure!(
+                    len >= 2 && i + len <= bytes.len(),
+                    "segment runs past end of file"
+                );
                 let segment = &bytes[start..i + len];
                 let payload = &bytes[i + 2..i + len];
                 i += len;
@@ -109,7 +115,10 @@ fn strip_jpeg(bytes: &[u8]) -> Result<Vec<u8>> {
                     // by 0x00 (a stuffed byte) or an RST marker.
                     let scan_start = i;
                     while i + 1 < bytes.len() {
-                        if bytes[i] == 0xFF && bytes[i + 1] != 0x00 && !(0xD0..=0xD7).contains(&bytes[i + 1]) {
+                        if bytes[i] == 0xFF
+                            && bytes[i + 1] != 0x00
+                            && !(0xD0..=0xD7).contains(&bytes[i + 1])
+                        {
                             break;
                         }
                         i += 1;
@@ -128,7 +137,9 @@ fn strip_jpeg(bytes: &[u8]) -> Result<Vec<u8>> {
 
     let mut out = Vec::with_capacity(bytes.len());
     out.extend_from_slice(&[0xFF, 0xD8]);
-    let minimal_exif = orientation.filter(|o| (2..=8).contains(o)).map(orientation_app1);
+    let minimal_exif = orientation
+        .filter(|o| (2..=8).contains(o))
+        .map(orientation_app1);
     // The minimal orientation EXIF goes right after a leading JFIF APP0
     // (JFIF requires APP0 first), otherwise right after SOI.
     let insert_after = usize::from(kept.first().is_some_and(|s| s.get(1) == Some(&0xE0)));
@@ -154,11 +165,19 @@ fn exif_orientation(tiff: &[u8]) -> Option<u16> {
     };
     let u16_at = |at: usize| -> Option<u16> {
         let b: [u8; 2] = tiff.get(at..at + 2)?.try_into().ok()?;
-        Some(if big { u16::from_be_bytes(b) } else { u16::from_le_bytes(b) })
+        Some(if big {
+            u16::from_be_bytes(b)
+        } else {
+            u16::from_le_bytes(b)
+        })
     };
     let u32_at = |at: usize| -> Option<u32> {
         let b: [u8; 4] = tiff.get(at..at + 4)?.try_into().ok()?;
-        Some(if big { u32::from_be_bytes(b) } else { u32::from_le_bytes(b) })
+        Some(if big {
+            u32::from_be_bytes(b)
+        } else {
+            u32::from_le_bytes(b)
+        })
     };
     let ifd = u32_at(4)? as usize;
     let count = u16_at(ifd)? as usize;
@@ -193,9 +212,8 @@ const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 /// made the image, where, or when. Notably absent: `eXIf`, `tEXt`,
 /// `zTXt`, `iTXt` (where XMP lives) and `tIME`.
 const PNG_KEEP: &[&[u8; 4]] = &[
-    b"IHDR", b"PLTE", b"IDAT", b"IEND", b"tRNS", b"cHRM", b"gAMA", b"iCCP", b"sBIT",
-    b"sRGB", b"cICP", b"mDCV", b"cLLI", b"bKGD", b"hIST", b"pHYs", b"sPLT", b"acTL",
-    b"fcTL", b"fdAT",
+    b"IHDR", b"PLTE", b"IDAT", b"IEND", b"tRNS", b"cHRM", b"gAMA", b"iCCP", b"sBIT", b"sRGB",
+    b"cICP", b"mDCV", b"cLLI", b"bKGD", b"hIST", b"pHYs", b"sPLT", b"acTL", b"fcTL", b"fdAT",
 ];
 
 fn strip_png(bytes: &[u8]) -> Result<Vec<u8>> {
@@ -205,7 +223,10 @@ fn strip_png(bytes: &[u8]) -> Result<Vec<u8>> {
         ensure!(i + 8 <= bytes.len(), "file ends before IEND");
         let len = u32::from_be_bytes(bytes[i..i + 4].try_into()?) as usize;
         let kind: &[u8; 4] = bytes[i + 4..i + 8].try_into()?;
-        let end = i.checked_add(12).and_then(|n| n.checked_add(len)).context("chunk too large")?;
+        let end = i
+            .checked_add(12)
+            .and_then(|n| n.checked_add(len))
+            .context("chunk too large")?;
         ensure!(end <= bytes.len(), "chunk runs past end of file");
         if PNG_KEEP.contains(&kind) {
             out.extend_from_slice(&bytes[i..end]); // CRC travels with it, unchanged
@@ -225,7 +246,9 @@ fn strip_png(bytes: &[u8]) -> Result<Vec<u8>> {
 
 /// Image data, alpha, animation and color profile. Notably absent:
 /// `EXIF` and `XMP `.
-const WEBP_KEEP: &[&[u8; 4]] = &[b"VP8 ", b"VP8L", b"VP8X", b"ALPH", b"ANIM", b"ANMF", b"ICCP"];
+const WEBP_KEEP: &[&[u8; 4]] = &[
+    b"VP8 ", b"VP8L", b"VP8X", b"ALPH", b"ANIM", b"ANMF", b"ICCP",
+];
 
 fn strip_webp(bytes: &[u8]) -> Result<Vec<u8>> {
     let riff_len = u32::from_le_bytes(bytes[4..8].try_into()?) as usize;
@@ -264,15 +287,27 @@ mod tests {
     /// GPS area, XMP, comments, PNG text chunks, an EXIF block on an image
     /// appended after the JPEG's end). None may survive.
     const SECRETS: &[&[u8]] = &[
-        b"SECRETDESC", b"SECRETPLACE", b"SECRETXMP", b"SECRETCOMMENT", b"SECRETTRAILER",
-        b"SECRETTEXT", b"LEAKYCAM",
+        b"SECRETDESC",
+        b"SECRETPLACE",
+        b"SECRETXMP",
+        b"SECRETCOMMENT",
+        b"SECRETTRAILER",
+        b"SECRETTEXT",
+        b"LEAKYCAM",
     ];
 
     fn assert_clean(original: &[u8]) -> Vec<u8> {
-        assert!(SECRETS.iter().any(|s| contains(original, s)), "fixture lost its secrets");
+        assert!(
+            SECRETS.iter().any(|s| contains(original, s)),
+            "fixture lost its secrets"
+        );
         let stripped = strip_metadata(original).unwrap();
         for secret in SECRETS {
-            assert!(!contains(&stripped, secret), "{} survived", String::from_utf8_lossy(secret));
+            assert!(
+                !contains(&stripped, secret),
+                "{} survived",
+                String::from_utf8_lossy(secret)
+            );
         }
         // Stripping is a fixed point: a clean image passes through unchanged.
         assert_eq!(strip_metadata(&stripped).unwrap(), stripped);
@@ -287,12 +322,19 @@ mod tests {
     fn jpeg_loses_exif_xmp_comments_and_trailing_image_but_keeps_orientation() {
         let stripped = assert_clean(include_bytes!("../tests/fixtures/meta.jpg"));
         assert!(stripped.ends_with(&[0xFF, 0xD9]), "nothing after EOI");
-        assert_eq!(stripped.windows(2).filter(|w| *w == [0xFF, 0xD9]).count(), 1);
+        assert_eq!(
+            stripped.windows(2).filter(|w| *w == [0xFF, 0xD9]).count(),
+            1
+        );
         // The fixture's orientation (6, "rotate 90° clockwise") survives
         // as the only EXIF content, placed after the JFIF header.
         let exif = orientation_app1(6);
         assert!(contains(&stripped, &exif));
-        assert_eq!(&stripped[2..4], &[0xFF, 0xE0], "JFIF APP0 still comes first");
+        assert_eq!(
+            &stripped[2..4],
+            &[0xFF, 0xE0],
+            "JFIF APP0 still comes first"
+        );
     }
 
     #[test]
