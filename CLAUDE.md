@@ -59,7 +59,8 @@ emulator yet (none available in this sandbox), and there's no real
 release keystore, only a local throwaway debug one; QR scanning is now
 built both ways (generate and read back, Client section below) but
 unverified on a real camera; mute/profile UI has no CLI parity for
-profile specifically; and no thumbnailing/format validation on images.
+profile specifically; and no thumbnailing or size limit on images
+(metadata stripping is built — see the Images entry below).
 If a future `iroh-docs` upgrade or new finding turns any of the resolved
 SPEC.md forks out to be wrong, don't patch around it quietly — revise
 the relevant section the same way every previous revision is recorded,
@@ -884,8 +885,14 @@ Recommended list, each tagged with its pattern:
   boundary as a plain JSON byte array — fine for a reference client, not
   tuned for large files) and the CLI's `upload-image`/`images`/
   `download-image` subcommands, verified with a real byte-for-byte round
-  trip through a local file. Not built: thumbnailing, image format
-  validation, or any size limit.
+  trip through a local file. **Metadata stripping — built
+  (2026-10-02)**: `upload_image` runs every image through `strip.rs`
+  first, lossless and allowlist-based (JPEG/PNG/WebP keep only pixel,
+  decoding and color data; JPEG keeps orientation in a minimal EXIF;
+  anything after a JPEG's end is dropped; every other format is
+  refused). THREAT_MODEL.md's object-lesson section has why. The
+  Photos picker now offers only those three types. Not built:
+  thumbnailing or any size limit.
 - **Tagging — built (2026-09-22), and cross-lexicon by construction**
   (Jason's explicit requirement). `crates/atproto-iroh-core/src/
   tagging.rs`: `Tag` (`network.essmesh.tag`,

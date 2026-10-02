@@ -19,13 +19,16 @@ async fn an_uploaded_image_syncs_metadata_and_bytes_to_a_new_peer() -> anyhow::R
     let founder = founder_node.author_create().await?;
     let doc = founder_node.create_namespace().await?;
 
-    // Not a real PNG — arbitrary bytes are enough to prove the sync
-    // mechanism; this module doesn't parse or validate image content.
-    let image_bytes: Vec<u8> = vec![0x89, b'P', b'N', b'G', 1, 2, 3, 4, 5];
+    // A real PNG carrying EXIF (with GPS), text and XMP chunks — upload
+    // now strips metadata (`strip.rs`), so what syncs must be the cleaned
+    // image, not the original.
+    let original: Vec<u8> = include_bytes!("fixtures/meta.png").to_vec();
+    let image_bytes = atproto_iroh_core::strip::strip_metadata(&original)?;
+    assert!(image_bytes.len() < original.len(), "fixture had metadata to strip");
     let rkey = upload_image(
         &doc,
         founder,
-        image_bytes.clone(),
+        original.clone(),
         "image/png".into(),
         Some("a test image".into()),
     )
@@ -67,8 +70,26 @@ async fn an_uploaded_image_syncs_metadata_and_bytes_to_a_new_peer() -> anyhow::R
         sleep(Duration::from_millis(50)).await;
     };
     assert_eq!(bytes.to_vec(), image_bytes);
+    assert!(!bytes.windows(b"SECRETPLACE".len()).any(|w| w == b"SECRETPLACE"));
 
     founder_node.shutdown().await;
     viewer_node.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_format_that_cant_be_cleaned_is_refused_and_nothing_is_written() -> anyhow::Result<()> {
+    let node = Node::spawn().await?;
+    let author = node.author_create().await?;
+    let doc = node.create_namespace().await?;
+
+    // An iPhone-style HEIC header: not a format `strip.rs` can clean, so
+    // the upload must fail closed rather than store it as-is.
+    let heic = b"\0\0\0\x18ftypheic\0\0\0\0mif1heic".to_vec();
+    let result = upload_image(&doc, author, heic, "image/heic".into(), None).await;
+    assert!(result.is_err());
+    assert!(list_images(&node, &doc).await?.is_empty());
+
+    node.shutdown().await;
     Ok(())
 }

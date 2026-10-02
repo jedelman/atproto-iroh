@@ -134,13 +134,19 @@ onto something specific here:
    searchable archive:
    - Every new member receives the Table's **full history** from day one
      (`SPEC.md` §6 item 10).
-   - **Photos keep their metadata.** The Photos tab uploads the file's
-     raw bytes (`TableDetail.tsx`: `file.arrayBuffer()` straight into
-     `upload_image`; `images.rs` stores them unchanged), so EXIF data,
-     including GPS coordinates when the camera recorded them, reaches
-     every member. Android may redact location from picked photos for
-     apps without the media-location permission; we haven't verified
-     that, and desktop does no such thing.
+   - **Photos kept their metadata — fixed 2026-10-02.** The Photos tab
+     uploaded the file's raw bytes, so EXIF data, including GPS
+     coordinates, reached every member. `upload_image` now runs every
+     image through `strip.rs` before writing anything: JPEG, PNG and
+     WebP lose EXIF, XMP, IPTC, comments, text chunks and timestamps,
+     and a JPEG loses anything appended after its end (phones append
+     whole second images there, with their own EXIF). It's an
+     allowlist: only pixel, decoding and color data stay, and unknown
+     parts are dropped. JPEG orientation is kept in a fresh EXIF block
+     holding nothing else. Every other format is refused, not stored.
+     Limits: photos uploaded before this fix still carry their
+     metadata; the pixels themselves can still show where you are; and
+     the stripper hasn't had an outside review.
    - Invitations carry the inviter's IP addresses (see "Invitations").
    - None of it can be taken back after removal.
 5. **Screenshots as evidence, both ways.** The thread is built from
@@ -184,8 +190,8 @@ Until each item is done, the release is a lab build:
       statement of what X keeps.
 - [ ] Invite QR codes either drop direct addresses or warn that they
       include them.
-- [ ] Strip photo metadata (EXIF, including GPS) on upload, before the
-      bytes are written.
+- [x] Strip photo metadata (EXIF, including GPS) on upload, before the
+      bytes are written (`strip.rs`, 2026-10-02).
 - [ ] Decide what new members see: full history by default is a choice,
       not a law. At minimum, tell the group when someone new will
       receive everything.

@@ -19,6 +19,9 @@
 //!   `iroh-blobs`' own out-of-band blob API — see the module's own note
 //! - [`messaging`] — `network.essmesh.chat.message` (batteries-included
 //!   app list, CLAUDE.md), append-only, no new sync primitive needed
+//! - [`strip`] — removes identifying metadata (EXIF/GPS, XMP, comments,
+//!   text chunks, appended images) from images before upload, losslessly;
+//!   THREAT_MODEL.md's photo-metadata finding
 //! - [`mute`] — local, unsynced per-reader mute (§6 item 12)
 //! - [`paths`] — the shared, overridable local-data-directory convention
 //!   `identity`/`namespace`/`mute` all persist under
@@ -35,4 +38,5 @@ pub mod mute;
 pub mod namespace;
 pub mod paths;
 pub mod records;
+pub mod strip;
 pub mod tagging;

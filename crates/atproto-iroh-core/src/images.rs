@@ -32,6 +32,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     namespace::{get_bytes, list_records, new_entry_key, put_bytes, put_record, Node},
     records::Record,
+    strip::strip_metadata,
 };
 
 /// `network.essmesh.chat.image` — `lexicons/network/essmesh/chat/image.json`.
@@ -58,7 +59,8 @@ fn blob_key(rkey: &str) -> String {
     format!("network.essmesh.chat.image.blob/{rkey}")
 }
 
-/// Uploads an image: writes its raw bytes, then a typed `ImageMeta`
+/// Uploads an image: strips its metadata (`strip::strip_metadata`, which
+/// refuses formats it can't clean), writes the cleaned bytes, then a typed `ImageMeta`
 /// pointing at the same `rkey`. Not atomic across the two writes (no
 /// transaction spans two `iroh-docs` entries), but the failure mode is
 /// contained — the same underlying safety `submit_text`'s own posture
@@ -72,6 +74,9 @@ pub async fn upload_image(
     content_type: String,
     caption: Option<String>,
 ) -> Result<String> {
+    // Location and other identifying metadata come off before anything
+    // is written, here rather than in any one client (`strip.rs`).
+    let bytes = strip_metadata(&bytes)?;
     let rkey = new_entry_key();
     let len = bytes.len() as u64;
     put_bytes(doc, author, &blob_key(&rkey), bytes).await?;

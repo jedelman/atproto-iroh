@@ -671,7 +671,9 @@ function PhotosPanel({
           {uploading ? "Uploading…" : "Add photo"}
           <input
             type="file"
-            accept="image/*"
+            // Only formats the core can strip metadata from (strip.rs);
+            // offering just these also lets iOS convert HEIC to JPEG at pick time.
+            accept="image/jpeg,image/png,image/webp"
             disabled={uploading}
             onChange={(e) => {
               const file = e.target.files?.[0];
